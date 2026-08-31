@@ -1,0 +1,14 @@
+.adultControls .soundButton {
+  min-width: 82px;
+}
+
+.adultControls .soundButton span {
+  display: inline;
+  padding: 0;
+  color: inherit;
+  font-size: 14px;
+}
+
+.adultControls .soundButton span::before {
+  display: none;
+}

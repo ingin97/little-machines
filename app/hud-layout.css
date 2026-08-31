@@ -1,0 +1,89 @@
+.fullscreenGame .vehicleMenuButton {
+  left: 18px;
+  top: 16px;
+  bottom: auto;
+}
+
+.fullscreenGame .gameHud {
+  left: 18px;
+  top: 76px;
+}
+
+.fullscreenGame .soundButton {
+  right: 18px;
+  top: 16px;
+}
+
+.fullscreenGame .resetButton {
+  right: 18px;
+  top: 62px;
+}
+
+.fullscreenGame .adultControls {
+  right: 18px;
+  top: 108px;
+  bottom: auto;
+  z-index: 8;
+}
+
+.fullscreenGame:has(.tractorGame) .multiplayerButton {
+  top: 202px;
+}
+
+.fullscreenGame:has(.tractorGame) .multiplayerControls {
+  top: 248px;
+}
+
+.fullscreenGame:has(.workHud) .multiplayerButton {
+  top: 228px;
+}
+
+.fullscreenGame:has(.workHud) .multiplayerControls {
+  top: 274px;
+}
+
+@media (max-width: 760px) {
+  .fullscreenGame .vehicleMenuButton {
+    left: 10px;
+    top: 10px;
+    bottom: auto;
+  }
+
+  .fullscreenGame .gameHud {
+    left: 10px;
+    top: 70px;
+  }
+
+  .fullscreenGame .soundButton {
+    right: 10px;
+    top: 10px;
+  }
+
+  .fullscreenGame .resetButton {
+    right: 10px;
+    top: 54px;
+  }
+
+  .fullscreenGame .adultControls {
+    right: 10px;
+    top: 98px;
+    bottom: auto;
+    max-width: 58%;
+  }
+
+  .fullscreenGame:has(.tractorGame) .multiplayerButton {
+    top: 196px;
+  }
+
+  .fullscreenGame:has(.tractorGame) .multiplayerControls {
+    top: 242px;
+  }
+
+  .fullscreenGame:has(.workHud) .multiplayerButton {
+    top: 220px;
+  }
+
+  .fullscreenGame:has(.workHud) .multiplayerControls {
+    top: 266px;
+  }
+}

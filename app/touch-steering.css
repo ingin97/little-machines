@@ -1,0 +1,41 @@
+.touchSteering {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: none;
+  pointer-events: none;
+}
+
+.touchSteering button {
+  position: absolute;
+  top: 58%;
+  display: grid;
+  place-items: center;
+  width: 82px;
+  height: 82px;
+  transform: translateY(-50%);
+  border: 3px solid #fff8dc;
+  border-radius: 50%;
+  background: #17382fd9;
+  color: #fff;
+  box-shadow: 0 8px 24px #10261e66;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touchSteering button:first-child { left: 12px; }
+.touchSteering button:last-child { right: 12px; }
+.touchSteering button span { font-size: 48px; font-weight: 950; line-height: 1; transform: translateY(-2px); }
+.touchSteering button.pressed { background: #ef7d32; transform: translateY(-50%) scale(.92); box-shadow: 0 4px 12px #10261e66; }
+
+@media (hover: none) and (pointer: coarse), (max-width: 760px) {
+  .touchSteering { display: block; }
+}
+
+@media (max-width: 480px) {
+  .touchSteering button { top: 61%; width: 72px; height: 72px; }
+  .touchSteering button span { font-size: 42px; }
+}

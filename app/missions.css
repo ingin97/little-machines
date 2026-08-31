@@ -1,0 +1,104 @@
+.missionLabel {
+  margin: 10px 0 7px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.missionDots {
+  display: flex !important;
+  justify-content: flex-start !important;
+  gap: 7px;
+}
+
+.missionDots i {
+  width: 17px;
+  height: 17px;
+  border: 3px solid #b9b29f;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .2s, background .2s;
+}
+
+.missionDots i.done {
+  background: var(--orange);
+  border-color: var(--orange);
+  transform: scale(1.12);
+}
+
+.soundButton {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  z-index: 8;
+  border: 1px solid #ffffff33;
+  border-radius: 12px;
+  background: #17382fdd;
+  color: #fff;
+  padding: 10px 13px;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 6px 20px #17362755;
+  cursor: pointer;
+}
+
+.fullscreenGame .resetButton { top: 70px; }
+
+.constructionTools {
+  position: fixed;
+  z-index: 7;
+  left: 50%;
+  bottom: 8px;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+  padding: 7px;
+  border: 1px solid #ffffff33;
+  border-radius: 20px;
+  background: #17382fc9;
+  backdrop-filter: blur(9px);
+}
+
+.constructionTools button {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 112px;
+  border: 3px solid transparent;
+  border-radius: 14px;
+  background: #fff9e8;
+  color: #19332b;
+  padding: 8px 13px;
+  box-shadow: 0 5px 14px #11271f55;
+  cursor: pointer;
+}
+
+.constructionTools button span { font-size: 24px; }
+.constructionTools button strong { font-size: 13px; }
+.constructionTools button.active {
+  border-color: var(--vehicle-color);
+  background: #fff2cd;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 18px #11271f88;
+}
+
+.modeGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 650px;
+  margin-inline: auto;
+}
+
+@media (max-width: 760px) {
+  .constructionTools { bottom: 5px; gap: 4px; padding: 5px; }
+  .constructionTools button { grid-template-columns: 1fr; gap: 0; min-width: 70px; padding: 5px 8px; }
+  .constructionTools button span { font-size: 20px; }
+  .constructionTools button strong { font-size: 10px; }
+  .vehicleMenuButton, .adultControls { bottom: 70px; }
+}
+
+@media (max-width: 520px) {
+  .soundButton { right: 10px; top: 10px; padding: 8px 10px; }
+  .fullscreenGame .resetButton { top: 58px; }
+  .constructionTools button { min-width: 62px; }
+  .constructionTools button strong { font-size: 9px; }
+}

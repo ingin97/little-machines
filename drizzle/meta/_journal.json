@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786924800000,
+      "tag": "0000_multiplayer_poc",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786928400000,
+      "tag": "0001_four_player_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786932000000,
+      "tag": "0002_public_poc_security",
+      "breakpoints": true
+    }
+  ]
+}
