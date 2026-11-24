@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DirectionalLight, NullEngine, Scene, ShadowGenerator, Vector3 } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Scene } from "@babylonjs/core/scene.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { createDrivingParticles } from "../app/racing/particles.ts";
 import { createVehicle, stepTime } from "../app/racing/vehicle.ts";
 import { boundary, createWorld, spawn } from "../app/racing/world.ts";
 
@@ -23,13 +29,15 @@ function playground(t) {
   assert.ok(chassis);
   const settings = { automatic: true, gentle: true, reverse: true, recovery: true, speed: 15, dead: 8, calibration: null };
 
+  let goals = 0;
   function drive(seconds, input = {}, sample = () => {}) {
     const controls = { steer: 0, accelerator: 0, brake: 0, ...input };
     for (let i = 0; i < Math.round(seconds / stepTime); i++) {
       car.step(controls, settings);
       physics.step();
       car.sync();
-      world.sync(car.root.position, car.boost());
+      if (world.checkGoals(stepTime, car.root.position)) goals++;
+      world.sync(car.root.position, car.boost(), stepTime);
       sample(car.root.position);
     }
   }
@@ -37,7 +45,7 @@ function playground(t) {
     car.reset({ x, y: spawn.y, z, heading });
   }
 
-  return { car, chassis, bodies, settings, physics, drive, place };
+  return { car, chassis, bodies, settings, physics, scene, drive, place, goals: () => goals };
 }
 
 test("boost respects the speed cap and both bridge levels and tunnel stay driveable", (t) => {
@@ -113,4 +121,86 @@ test("toddler mode continues driving through several minutes of fixed steering",
     furthest = Math.max(furthest, Math.hypot(x, z));
   });
   assert.ok(furthest > 80 && furthest < boundary + 1);
+});
+
+
+test("changing cars preserves the physics pose and landing feedback only fires once", (t) => {
+  const { car, chassis, scene, drive, place } = playground(t);
+  new FreeCamera("test camera", new Vector3(0, 4, -15), scene).setTarget(Vector3.Zero());
+  scene.render();
+  place(-28, -65);
+  let landings = 0;
+  drive(1.5);
+  const before = chassis.translation();
+  car.setLook("rocket");
+  assert.deepEqual(chassis.translation(), before);
+  assert.equal(scene.getTransformNodeByName("rocket fins").isEnabled(), true);
+  assert.equal(scene.getTransformNodeByName("rally spoiler").isEnabled(), false);
+  drive(3.5, {}, () => {
+    if (car.takeLanding() > 0) landings++;
+  });
+  assert.equal(landings, 1);
+
+  drive(stepTime);
+  const currentPosition = car.root.position.clone();
+  car.sync(0);
+  const previousPosition = car.root.position.clone();
+  car.sync(.5);
+  assert.ok(Vector3.Distance(car.root.position, Vector3.Center(previousPosition, currentPosition)) < .00001);
+});
+
+
+test("driving particles reuse their pool and expire", (t) => {
+  const { car, scene } = playground(t);
+  const effects = createDrivingParticles(scene);
+  const pool = scene.meshes.filter((mesh) => mesh.name === "driving particle");
+  const update = (speed, boost, impact) => effects.update(stepTime, car.root.position, car.root.rotationQuaternion,
+    speed, true, boost, impact, true);
+
+  assert.equal(pool.length, 46);
+  update(12, 1, .9);
+  assert.ok(pool.some((mesh) => mesh.isEnabled() && mesh.isVisible));
+  for (let i = 0; i < 60; i++) update(0, 0, 0);
+  assert.ok(pool.every((mesh) => !mesh.isEnabled()));
+  assert.equal(scene.meshes.filter((mesh) => mesh.name === "driving particle").length, pool.length);
+});
+
+
+test("the scenic loop has a high point, three entrances, and a separate jump", (t) => {
+  const { physics, car, drive, place } = playground(t);
+  drive(stepTime);
+  function groundAt(x, z) {
+    const ray = new RAPIER.Ray({ x, y: 30, z }, { x: 0, y: -1, z: 0 });
+    const hit = physics.castRay(ray, 35, true, RAPIER.QueryFilterFlags.ONLY_FIXED);
+    assert.ok(hit);
+    return 30 - hit.timeOfImpact;
+  }
+  assert.ok(groundAt(221, 0) > 9);
+  for (const entry of [-40, 0, 40]) {
+    place(75, entry, Math.PI / 2);
+    drive(4);
+    assert.ok(car.root.position.x > 100 && Math.abs(car.root.position.z - entry) < 2);
+  }
+  place(122, -35, Math.PI / 2);
+  let peak = 0;
+  drive(5, {}, ({ y }) => { peak = Math.max(peak, y); });
+  assert.ok(peak > 3.7 && car.root.position.y < 1.4);
+});
+
+test("a kicked football scores once and waits to re-serve if the car blocks its spot", (t) => {
+  const { bodies, chassis, scene, drive, place, goals, settings } = playground(t);
+  const ball = bodies.find((body) => Math.abs(body.mass() - 26) < .1 && Math.abs(body.translation().x - 30) < .5);
+  assert.ok(ball);
+  place(30, -43);
+  for (let i = 0; i < 420 && !goals(); i++) drive(stepTime);
+  assert.equal(goals(), 1);
+  assert.ok(scene.meshes.some((mesh) => mesh.name === "goal confetti" && mesh.isEnabled()));
+  settings.automatic = false;
+  place(30, -29);
+  drive(2);
+  assert.equal(goals(), 1);
+  assert.ok(ball.translation().z > -13);
+  chassis.setTranslation({ x: 20, y: .87, z: -40 }, true);
+  drive(1);
+  assert.ok(Math.abs(ball.translation().z + 29) < .15);
 });

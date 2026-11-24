@@ -1,5 +1,13 @@
-import { Mesh, MeshBuilder, Quaternion, Scene, ShadowGenerator, TransformNode, Vector3, VertexData } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
+import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { crossedGoal, serveAreaClear } from "./goal.ts";
 import { paint } from "./surfaces.ts";
 
 export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator) {
@@ -7,6 +15,7 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
   const dark = paint(scene, "#38405d");
   const colors = ["#fc7355", "#f6c759", "#5ec6be", "#818be1"].map((color) => paint(scene, color));
   const objects: { node: TransformNode; body: RAPIER.RigidBody; home: Vector3 }[] = [];
+  const footballs: { body: RAPIER.RigidBody; home: Vector3; previous: Vector3; scoredFor: number }[] = [];
   function add(node: TransformNode, home: Vector3, shape: RAPIER.ColliderDesc) {
     const body = physics.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(home.x, home.y, home.z).setLinearDamping(.24).setAngularDamping(.25).setCcdEnabled(true));
@@ -14,6 +23,7 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
     node.rotationQuaternion = Quaternion.Identity();
     node.position.copyFrom(home);
     objects.push({ node, body, home });
+    return body;
   }
 
   const radius = 1.8;
@@ -23,7 +33,7 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
     directions.push(new Vector3(0, a, b), new Vector3(b, 0, a), new Vector3(a, b, 0));
   }
   for (const [x, z] of [[30, -29], [43, -34], [-31, 32]]) {
-    const ball = MeshBuilder.CreateIcoSphere("football", { radius, subdivisions: 3, flat: true }, scene);
+    const ball = CreateIcoSphere("football", { radius, subdivisions: 3, flat: true }, scene);
     ball.material = cream;
     shadows.addShadowCaster(ball);
     const panels = new Mesh("football panels", scene);
@@ -54,15 +64,16 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
     data.applyToMesh(panels);
     panels.parent = ball;
     panels.material = dark;
-    add(ball, new Vector3(x, radius + .06, z), RAPIER.ColliderDesc.ball(radius)
-      .setMass(26).setFriction(.54).setRestitution(.55));
+    const home = new Vector3(x, radius + .06, z);
+    const body = add(ball, home, RAPIER.ColliderDesc.ball(radius).setMass(26).setFriction(.54).setRestitution(.55));
+    footballs.push({ body, home, previous: home.clone(), scoredFor: -1 });
   }
 
   for (const [x, z] of [[36, 34], [-38, 38], [100, 13]]) {
     const size = 1.55;
     for (let row = 0; row < 3; row++) {
       for (let column = 0; column < 3 - row; column++) {
-        const block = MeshBuilder.CreateBox("stacking block", { size }, scene);
+        const block = CreateBox("stacking block", { size }, scene);
         block.material = colors[(row * 2 + column) % colors.length];
         shadows.addShadowCaster(block);
         add(block, new Vector3(x + (column - (2 - row) / 2) * (size + .04), (row + .5) * size + row * .02 + .025, z),
@@ -71,14 +82,48 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
     }
   }
 
+  function returnHome(body: RAPIER.RigidBody, home: Vector3) {
+    body.setTranslation(home, true);
+    body.setLinvel(Vector3.Zero(), true);
+    body.setAngvel(Vector3.Zero(), true);
+    body.setRotation(Quaternion.Identity(), true);
+  }
+
+  function checkGoals(dt: number, car: Vector3) {
+    let scored = false;
+    for (const ball of footballs) {
+      const { body, home, previous } = ball;
+      const point = body.translation();
+      if (ball.scoredFor >= 0) {
+        ball.scoredFor += dt;
+        if (ball.scoredFor > 1.25 && serveAreaClear(car, home) && footballs.every((other) => {
+          if (other === ball) return true;
+          const location = other.body.translation();
+          return Math.hypot(location.x - home.x, location.z - home.z) > radius * 2;
+        })) {
+          returnHome(body, home);
+          previous.copyFrom(home);
+          ball.scoredFor = -1;
+          continue;
+        }
+      } else if (crossedGoal(previous, point, radius)) {
+        ball.scoredFor = 0;
+        const velocity = body.linvel();
+        body.setLinvel({ x: velocity.x * .24, y: velocity.y, z: velocity.z * .20 }, true);
+        scored = true;
+      }
+      previous.set(point.x, point.y, point.z);
+    }
+    return scored;
+  }
+
   function sync(car: Vector3) {
     for (const { node, body, home } of objects) {
       const point = body.translation();
-      if ((point.y < -6 || Math.hypot(point.x, point.z) > 155) && Vector3.DistanceSquared(car, home) > 100) {
-        body.setTranslation(home, true);
-        body.setLinvel(Vector3.Zero(), true);
-        body.setAngvel(Vector3.Zero(), true);
-        body.setRotation(Quaternion.Identity(), true);
+      if ((point.y < -6 || Math.hypot(point.x, point.z) > 260) && Vector3.DistanceSquared(car, home) > 100) {
+        returnHome(body, home);
+        const ball = footballs.find((item) => item.body === body);
+        if (ball) { ball.previous.copyFrom(home); ball.scoredFor = -1; }
       }
       const current = body.translation();
       const rotation = body.rotation();
@@ -86,5 +131,5 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
       node.rotationQuaternion!.set(rotation.x, rotation.y, rotation.z, rotation.w);
     }
   }
-  return { sync };
+  return { sync, checkGoals };
 }

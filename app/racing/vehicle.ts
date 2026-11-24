@@ -1,7 +1,14 @@
-import { MeshBuilder, Quaternion, Scene, ShadowGenerator, TransformNode, Vector3 } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { clamp } from "../driveInput.ts";
 import type { DriveInput, DrivingSettings } from "./controls.ts";
+import { looks, type CarLook } from "./looks.ts";
 import { paint } from "./surfaces.ts";
 import { boundary, type Spawn } from "./world.ts";
 
@@ -18,24 +25,27 @@ export const stepTime = 1 / 60;
 export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, spawn: Spawn, padAt: (position: RAPIER.Vector) => number) {
   const body = physics.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
     .setLinearDamping(.14).setAngularDamping(1.4).setCcdEnabled(true));
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(.85, .27, 1.5)
-    .setMass(180).setFriction(.55).setRestitution(.14), body);
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(.66, .29, .68).setTranslation(0, .5, -.25)
-    .setMass(20).setFriction(.46), body);
+  const contactEvents = RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS;
+  const chassis = physics.createCollider(RAPIER.ColliderDesc.cuboid(.85, .27, 1.5)
+    .setActiveEvents(contactEvents).setContactForceEventThreshold(2800).setMass(180).setFriction(.55).setRestitution(.14), body);
+  const cabin = physics.createCollider(RAPIER.ColliderDesc.cuboid(.66, .29, .68).setTranslation(0, .5, -.25)
+    .setActiveEvents(contactEvents).setContactForceEventThreshold(2800).setMass(20).setFriction(.46), body);
   const controller = physics.createVehicleController(body);
   controller.indexUpAxis = 1;
   controller.setIndexForwardAxis = 2;
 
   const root = new TransformNode("car", scene);
   root.rotationQuaternion = Quaternion.Identity();
-  const orange = paint(scene, "#ff6538");
-  const cream = paint(scene, "#fff0bd");
+  const shell = new TransformNode("car body", scene);
+  shell.parent = root;
+  const orange = paint(scene, looks.rally.color);
+  const cream = paint(scene, looks.rally.accent);
   const black = paint(scene, "#26363e");
   const glass = paint(scene, "#376d82");
   const red = paint(scene, "#b52f37");
-  function box(name: string, width: number, height: number, depth: number, x: number, y: number, z: number, material: typeof orange) {
-    const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
-    mesh.parent = root;
+  function box(name: string, width: number, height: number, depth: number, x: number, y: number, z: number, material: typeof orange, parent = shell) {
+    const mesh = CreateBox(name, { width, height, depth }, scene);
+    mesh.parent = parent;
     mesh.position.set(x, y, z);
     mesh.material = material;
     shadows.addShadowCaster(mesh);
@@ -50,6 +60,31 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     box("headlight", .34, .18, .08, side * .54, .15, 1.52, cream);
     box("tail light", .32, .18, .08, side * .54, .13, -1.52, red);
   }
+
+  const accessories = {
+    rally: new TransformNode("rally spoiler", scene),
+    beach: new TransformNode("surfboard", scene),
+    rocket: new TransformNode("rocket fins", scene),
+  };
+  for (const accessory of Object.values(accessories)) accessory.parent = shell;
+  for (const x of [-.49, .49]) box("spoiler stand", .10, .28, .15, x, .38, -1.22, black, accessories.rally);
+  box("spoiler wing", 1.49, .12, .40, 0, .53, -1.27, cream, accessories.rally);
+  box("surfboard", .47, .09, 1.69, .08, .91, -.19, cream, accessories.beach);
+  box("surfboard stripe", .12, .014, 1.60, .08, .96, -.19, orange, accessories.beach);
+  for (const x of [-.71, .71]) {
+    box("fin", .14, .35, .47, x, .38, -1.20, cream, accessories.rocket);
+    box("jet outlet", .29, .21, .13, x, -.08, -1.56, glass, accessories.rocket);
+  }
+
+  let selectedLook: CarLook | undefined;
+  function setLook(look: CarLook) {
+    if (look === selectedLook) return;
+    selectedLook = look;
+    for (const key of Object.keys(looks) as CarLook[]) accessories[key].setEnabled(key === look);
+    orange.diffuseColor.copyFrom(Color3.FromHexString(looks[look].color));
+    cream.diffuseColor.copyFrom(Color3.FromHexString(looks[look].accent));
+  }
+  setLook("rally");
 
   const wheels: { pivot: TransformNode; spin: TransformNode }[] = [];
   for (const z of [1.05, -1.05]) {
@@ -69,14 +104,14 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
       const spin = new TransformNode("wheel axle", scene);
       spin.parent = pivot;
       for (const [name, diameter, width, material] of [["tire", .8, .34, black], ["hub", .46, .355, cream]] as const) {
-        const mesh = MeshBuilder.CreateCylinder(name, { diameter, height: width, tessellation: 16 }, scene);
+        const mesh = CreateCylinder(name, { diameter, height: width, tessellation: 16 }, scene);
         mesh.rotation.z = Math.PI / 2;
         mesh.parent = spin;
         mesh.material = material;
         shadows.addShadowCaster(mesh);
       }
       // An offset hub marker makes wheel rotation readable even at low speed.
-      const marker = MeshBuilder.CreateBox("hub marker", { width: .02, height: .10, depth: .08 }, scene);
+      const marker = CreateBox("hub marker", { width: .02, height: .10, depth: .08 }, scene);
       marker.parent = spin;
       marker.position.set(Math.sign(x) * .181, .12, 0);
       marker.material = orange;
@@ -96,6 +131,18 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
   let reversingSide = -1;
   let boostTime = 0;
   let occupiedPad = -1;
+  let currentSpeed = 0;
+  let previousSpeed = 0;
+  let groundedWheels = 0;
+  let airborneTime = 0;
+  let landing = 0;
+  let pitch = 0;
+  let roll = 0;
+  let braking = false;
+  const lastPosition = new Vector3();
+  const lastRotation = new Quaternion();
+  const currentPosition = new Vector3();
+  const currentRotation = new Quaternion();
   const recoverySpace = new RAPIER.Cuboid(1.09, .48, 1.7);
 
   function clearForRecovery(at: Spawn) {
@@ -120,17 +167,28 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     boostTime = 0;
     occupiedPad = -1;
     checkpoint = { ...at };
+    currentSpeed = previousSpeed = groundedWheels = airborneTime = landing = pitch = roll = 0;
+    braking = false;
+    lastPosition.set(at.x, at.y, at.z);
+    lastRotation.copyFrom(Quaternion.RotationAxis(localUp, at.heading));
     revision++;
     sync();
   }
 
-  function sync() {
+  function sync(alpha = 1, dt = stepTime) {
     const point = body.translation();
     const rotation = body.rotation();
-    root.position.set(point.x, point.y, point.z);
-    root.rotationQuaternion!.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    currentPosition.set(point.x, point.y, point.z);
+    currentRotation.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    Vector3.LerpToRef(lastPosition, currentPosition, alpha, root.position);
+    Quaternion.SlerpToRef(lastRotation, currentRotation, alpha, root.rotationQuaternion!);
+    shell.rotation.x = pitch;
+    shell.rotation.z = roll;
+    red.emissiveColor.set(braking ? .48 : .09, .015, .012);
+    const blend = 1 - Math.exp(-30 * dt);
     for (const [i, { pivot, spin }] of wheels.entries()) {
-      pivot.position.y = axleHeight - (controller.wheelSuspensionLength(i) ?? restLength);
+      const length = clamp(controller.wheelSuspensionLength(i) ?? restLength, restLength - .23, restLength + .23);
+      pivot.position.y += (axleHeight - length - pivot.position.y) * blend;
       pivot.rotation.y = i < 2 ? steering : 0;
       spin.rotation.x = controller.wheelRotation(i) ?? 0;
     }
@@ -141,8 +199,10 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     attitude.set(rotation.x, rotation.y, rotation.z, rotation.w);
     localUp.rotateByQuaternionToRef(attitude, up);
     localForward.rotateByQuaternionToRef(attitude, forward);
+    lastRotation.copyFrom(attitude);
     const velocity = body.linvel();
     const point = body.translation();
+    lastPosition.set(point.x, point.y, point.z);
     const speed = velocity.x * forward.x + velocity.z * forward.z;
     const planarSpeed = Math.hypot(velocity.x, velocity.z);
     const contacts = wheels.reduce((count, _, i) => count + Number(controller.wheelIsInContact(i)), 0);
@@ -171,6 +231,12 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
 
     const throttle = settings.automatic ? 1 : input.accelerator;
     const brake = input.brake > .08 ? input.brake : 0;
+    braking = brake > 0;
+    currentSpeed = planarSpeed;
+    groundedWheels = contacts;
+    pitch += (clamp((previousSpeed - speed) * .22, -.065, .065) - pitch) * .16;
+    roll += (steering * clamp(planarSpeed / 9, 0, 1) * .17 - roll) * .15;
+    previousSpeed = speed;
     const pad = padAt(point);
     if (pad !== occupiedPad && pad >= 0 && grounded && speed > 2 && !brake) boostTime = 1.35;
     occupiedPad = pad;
@@ -216,8 +282,20 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
       }, true);
     }
     controller.updateVehicle(stepTime, undefined, undefined, (collider) => collider.parent()?.handle !== body.handle);
+    if (wheels.some((_, i) => controller.wheelIsInContact(i))) {
+      if (airborneTime > .18 && velocity.y < -2.6) landing = clamp((-velocity.y - 2.6) / 9, .15, 1);
+      airborneTime = 0;
+    } else {
+      airborneTime += stepTime;
+    }
   }
 
   reset();
-  return { root, reset, sync, step, revision: () => revision, boost: () => Math.min(1, boostTime * 2) };
+  return {
+    root, reset, sync, step, setLook,
+    revision: () => revision, boost: () => Math.min(1, boostTime * 2),
+    speed: () => currentSpeed, grounded: () => groundedWheels > 0,
+    ownsCollider: (handle: number) => handle === chassis.handle || handle === cabin.handle,
+    takeLanding: () => { const strength = landing; landing = 0; return strength; },
+  };
 }

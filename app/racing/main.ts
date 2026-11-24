@@ -1,5 +1,14 @@
-import { Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, Scene, ShadowGenerator, Vector3 } from "@babylonjs/core";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
+import { Engine } from "@babylonjs/core/Engines/engine.js";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { createRacingAudio } from "./audio";
+import { createDrivingParticles } from "./particles";
 import { createControls } from "./controls";
 import { createVehicle, stepTime } from "./vehicle";
 import { createWorld, spawn } from "./world";
@@ -9,7 +18,11 @@ async function start() {
   const canvas = document.querySelector<HTMLCanvasElement>("#game")!;
   await RAPIER.init();
   const engine = new Engine(canvas, true);
-  engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 1.5));
+  engine.renderEvenInBackground = false;
+  const preferredScale = 1 / Math.min(window.devicePixelRatio || 1, 1.35);
+  engine.setHardwareScalingLevel(preferredScale);
+  let qualitySamples = 0;
+  let totalFrameTime = 0;
   const scene = new Scene(engine);
   scene.clearColor = Color4.FromHexString("#A6E0EBFF");
   scene.fogMode = Scene.FOGMODE_LINEAR;
@@ -35,6 +48,16 @@ async function start() {
   const playground = createWorld(scene, physics, shadows);
   const car = createVehicle(scene, physics, shadows, spawn, playground.padAt);
   const controls = createControls(car.reset);
+  const audio = createRacingAudio();
+  audio.update(controls.settings.sound, true, 0, true, 0);
+  const particles = createDrivingParticles(scene);
+  const contacts = new RAPIER.EventQueue(true);
+  let impact = 0;
+  const collectImpact = (event: RAPIER.TempContactForceEvent) => {
+    if (car.ownsCollider(event.collider1()) || car.ownsCollider(event.collider2())) {
+      impact = Math.max(impact, Math.min(1, (event.totalForceMagnitude() - 2800) / 8500));
+    }
+  };
   const camera = new FreeCamera("chase", Vector3.Zero(), scene);
   camera.minZ = .14;
   camera.maxZ = 300;
@@ -88,21 +111,52 @@ async function start() {
   }
 
   updateCamera(0);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) audio.update(controls.settings.sound, false, 0, true, 0);
+  });
   engine.runRenderLoop(() => {
-    const dt = Math.min(engine.getDeltaTime() / 1000, .075);
+    const rawFrameTime = engine.getDeltaTime();
+    const dt = Math.min(rawFrameTime / 1000, .075);
     const input = controls.read();
-    if (controls.paused()) {
+    const active = !controls.paused();
+    impact = 0;
+    let scored = false;
+    if (!active) {
       accumulator = 0;
     } else {
       accumulator += dt;
       while (accumulator >= stepTime) {
         car.step(input, controls.settings);
-        physics.step();
+        physics.step(contacts);
+        scored = playground.checkGoals(stepTime, car.root.position) || scored;
+        contacts.drainContactForceEvents(collectImpact);
+        impact = Math.max(impact, car.takeLanding());
         accumulator -= stepTime;
       }
+      const renderScale = engine.getHardwareScalingLevel();
+      if (renderScale < 1.5 && rawFrameTime > 0 && rawFrameTime < 150) {
+        totalFrameTime += rawFrameTime;
+        if (++qualitySamples === 120) {
+          if (totalFrameTime / qualitySamples > 23) {
+            engine.setHardwareScalingLevel(Math.min(1.5, renderScale * 1.15));
+          }
+          qualitySamples = totalFrameTime = 0;
+        }
+      }
     }
-    car.sync();
-    playground.sync(car.root.position, car.boost());
+    car.setLook(controls.settings.car);
+    car.sync(active ? accumulator / stepTime : 1, dt);
+    const speed = car.speed();
+    const grounded = car.grounded();
+    const boost = car.boost();
+    playground.sync(car.root.position, boost, active ? dt : 0);
+    audio.update(controls.settings.sound, active, speed, grounded, boost);
+    if (active) {
+      audio.impact(impact);
+      if (scored) audio.goalChime();
+      particles.update(dt, car.root.position, car.root.rotationQuaternion!, speed, grounded, boost, impact,
+        playground.isGrass(car.root.position));
+    }
     updateCamera(dt);
     scene.render();
   });

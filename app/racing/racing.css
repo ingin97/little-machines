@@ -37,3 +37,12 @@ dialog input[type=checkbox] { accent-color: #267271; }
 dialog output { float: right; }
 dialog p { font-size: .85rem; margin: 0; }
 #calibration:empty { display: none; }
+.garage { margin: 0; padding: 6px 0 0; border: 0; min-width: 0; }
+.garage legend { padding: 0; }
+.cars { display: flex; flex-wrap: wrap; gap: 8px; }
+.cars button { display: inline-flex; align-items: center; gap: 6px; }
+.cars button::before { content: ""; width: .8em; height: .8em; border-radius: 4px; background: var(--paint); }
+.cars button[aria-pressed="true"] { background: #ffdf84; box-shadow: 0 0 0 2px #795a18; }
+[data-car="rally"] { --paint: #ff6538; }
+[data-car="beach"] { --paint: #16a99e; }
+[data-car="rocket"] { --paint: #8464e3; }

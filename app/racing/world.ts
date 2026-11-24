@@ -1,11 +1,23 @@
-import { Color3, Mesh, MeshBuilder, Scene, ShadowGenerator, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
+import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { addFootballGoal } from "./goal.ts";
+import { addScenicLoop } from "./scenic.ts";
+import { createLandmarks } from "./landmarks.ts";
 import { createPlaythings } from "./playthings.ts";
 import { paint, straightRows, surface, type SurfaceRow } from "./surfaces.ts";
 
 export type Spawn = { x: number; y: number; z: number; heading: number };
 export const spawn: Spawn = { x: 0, y: .87, z: -8, heading: 0 };
-export const boundary = 145;
+export const boundary = 245;
 
 const east = Math.PI / 2;
 const flat = [-1, 1] as const;
@@ -23,15 +35,15 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
   boostPaint.emissiveColor = Color3.FromHexString("#135b67");
   const staticPieces: Mesh[] = [];
 
-  const ground = MeshBuilder.CreateGround("meadow", { width: 330, height: 330 }, scene);
+  const ground = CreateGround("meadow", { width: 530, height: 530 }, scene);
   ground.material = grass;
   ground.receiveShadows = true;
   ground.freezeWorldMatrix();
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(165, .5, 165).setTranslation(0, -.5, 0).setFriction(.8));
+  physics.createCollider(RAPIER.ColliderDesc.cuboid(265, .5, 265).setTranslation(0, -.5, 0).setFriction(.8));
 
   function box(name: string, size: [number, number, number], point: [number, number, number], material: StandardMaterial, solid = false) {
     const [width, height, depth] = size;
-    const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
+    const mesh = CreateBox(name, { width, height, depth }, scene);
     mesh.position.set(...point);
     mesh.material = material;
     staticPieces.push(mesh);
@@ -170,7 +182,18 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     }
   }
 
+  for (const [axis, start, end] of [[0, -66, -10], [0, 10, 16], [0, 27, 67], [1, -67, -9], [1, 10, 31], [1, 43, 68]]) {
+    for (let along = start; along <= end; along += 6.2) {
+      box("road center dash", axis ? [2.35, .017, .13] : [.13, .017, 2.35],
+        axis ? [along, .039, 0] : [0, .039, along], edge);
+    }
+  }
+
+  const scenic = addScenicLoop(scene, staticPieces, paved, strip);
+  const footballGoal = addFootballGoal(scene, staticPieces);
   addScenery(scene, staticPieces);
+  const landmarks = createLandmarks(scene, staticPieces);
+  const shadowMaterials = new Set([orange, teal, purple, ...landmarks.shadowMaterials]);
   // Batch immutable scenery by material for the main camera and shadow pass.
   const batches = new Map<StandardMaterial, Mesh[]>();
   for (const piece of staticPieces) {
@@ -184,15 +207,33 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     if (!mesh) continue;
     mesh.freezeWorldMatrix();
     mesh.receiveShadows = !material.disableLighting;
-    if ([orange, teal, purple].includes(material)) shadows.addShadowCaster(mesh);
+    if (shadowMaterials.has(material)) shadows.addShadowCaster(mesh);
   }
 
   const playthings = createPlaythings(scene, physics, shadows);
   return {
+    checkGoals(dt: number, car: Vector3) {
+      const scored = playthings.checkGoals(dt, car);
+      if (scored) footballGoal.celebrate();
+      return scored;
+    },
+    isGrass: ({ x, y, z }: Vector3) => {
+      const ax = Math.abs(x);
+      const az = Math.abs(z);
+      const corner = Math.hypot(ax - 54, az - 54);
+      const loop = (ax <= 54 && Math.abs(az - 76) < 7)
+        || (az <= 54 && Math.abs(ax - 76) < 7)
+        || (ax >= 54 && az >= 54 && Math.abs(corner - 22) < 7);
+      const bridge = ax < 52 && Math.abs(z - 53) < 6 && y > 1;
+      return !scenic.onRoad({ x, z }) && !loop && !bridge && !(ax < 6.5 && az < 83) && !(az < 6.5 && ax < 83);
+    },
     padAt: ({ x, y, z }: RAPIER.Vector) => y > .35 && y < 1.45
       ? pads.findIndex((pad) => Math.abs(x - pad.x) < pad.halfX && Math.abs(z - pad.z) < pad.halfZ)
       : -1,
-    sync: (car: Vector3, boost: number) => {
+    sync: (car: Vector3, boost: number, dt = 0) => {
+      landmarks.update(dt);
+      scenic.update(dt);
+      footballGoal.update(dt);
       boostPaint.emissiveColor.set(.07 + boost * .12, .34 + boost * .35, .39 + boost * .33);
       playthings.sync(car);
     },
@@ -208,19 +249,19 @@ function addScenery(scene: Scene, pieces: Mesh[]) {
   const trunk = paint(scene, "#ad7958");
   for (let i = 0; i < 26; i++) {
     const angle = i * 2.39996;
-    const distance = 147 + (i % 5) * 7;
+    const distance = (Math.sin(angle) > .69 ? 251 : 147) + (i % 5) * 7;
     const x = Math.sin(angle) * distance;
     const z = Math.cos(angle) * distance;
-    const hill = MeshBuilder.CreateIcoSphere("distant hill", { radius: 1, subdivisions: 2, flat: true }, scene);
+    const hill = CreateIcoSphere("distant hill", { radius: 1, subdivisions: 2, flat: true }, scene);
     hill.position.set(x, -8, z);
     hill.scaling.set(19 + i % 7, 17 + i % 11, 22);
     hill.material = ridge;
     pieces.push(hill);
     for (let j = -1; j <= 1; j++) {
-      const tree = MeshBuilder.CreateCylinder("tree trunk", { height: 3, diameter: .68, tessellation: 6 }, scene);
+      const tree = CreateCylinder("tree trunk", { height: 3, diameter: .68, tessellation: 6 }, scene);
       tree.position.set(x + j * 5.7, hill.scaling.y * .87 - 7.5, z - Math.cos(angle) * 6);
       tree.material = trunk;
-      const crown = MeshBuilder.CreateIcoSphere("tree crown", { radius: 2.3, subdivisions: 1, flat: true }, scene);
+      const crown = CreateIcoSphere("tree crown", { radius: 2.3, subdivisions: 1, flat: true }, scene);
       crown.position.set(tree.position.x, tree.position.y + 2.25, tree.position.z);
       crown.scaling.y = 1.5;
       crown.material = leaves[(i + j + 3) % leaves.length];
@@ -230,7 +271,7 @@ function addScenery(scene: Scene, pieces: Mesh[]) {
   for (let i = 0; i < 10; i++) {
     const angle = i * Math.PI / 5;
     for (let j = -1; j <= 1; j++) {
-      const puff = MeshBuilder.CreateIcoSphere("cloud", { radius: 1, subdivisions: 2, flat: true }, scene);
+      const puff = CreateIcoSphere("cloud", { radius: 1, subdivisions: 2, flat: true }, scene);
       puff.position.set(Math.sin(angle) * 152 + j * 9, 29 + i % 4 * 6 - Math.abs(j) * 2, Math.cos(angle) * 152);
       puff.scaling.set(11, 4, 6);
       puff.material = cloud;

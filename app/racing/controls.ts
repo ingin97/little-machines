@@ -1,3 +1,4 @@
+import { isCarLook, type CarLook } from "./looks";
 import { availableGamepads, clamp, combinedPedals, firstGamepad, steeringDeadZone } from "../driveInput";
 
 type PedalAxis = { index: number; rest: number; pressed: number };
@@ -5,7 +6,7 @@ type Calibration = { id: string; center: number; accelerator?: PedalAxis; brake?
 
 const toddler = { speed: 15, automatic: true, gentle: true, reverse: true, recovery: true };
 const normal = { speed: 28, automatic: false, gentle: false, reverse: false, recovery: false };
-const defaults = { ...toddler, dead: 8, calibration: null as Calibration | null };
+const defaults = { ...toddler, sound: true, car: "rally" as CarLook, dead: 8, calibration: null as Calibration | null };
 const storageKey = "little-machines-racing-controls";
 
 export type DrivingSettings = typeof defaults;
@@ -15,6 +16,8 @@ function loadSettings(): DrivingSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
     return {
+      sound: typeof saved?.sound === "boolean" ? saved.sound : defaults.sound,
+      car: isCarLook(saved?.car) ? saved.car : defaults.car,
       speed: Number.isFinite(saved?.speed) ? clamp(saved.speed, 8, 36) : defaults.speed,
       dead: Number.isFinite(saved?.dead) ? clamp(saved.dead, 0, 30) : defaults.dead,
       automatic: typeof saved?.automatic === "boolean" ? saved.automatic : defaults.automatic,
@@ -69,10 +72,23 @@ export function createControls(reset: () => void) {
     button.addEventListener("lostpointercapture", (event) => touch.delete(event.pointerId));
   }
 
-  const booleanFields = ["automatic", "gentle", "reverse", "recovery"] as const;
+  const booleanFields = ["automatic", "gentle", "reverse", "recovery", "sound"] as const;
+  const cars = document.querySelectorAll<HTMLButtonElement>("[data-car]");
+  function reflectCar() {
+    for (const button of cars) button.setAttribute("aria-pressed", String(button.dataset.car === settings.car));
+  }
+  for (const button of cars) {
+    button.onclick = () => {
+      if (!isCarLook(button.dataset.car)) return;
+      settings.car = button.dataset.car;
+      reflectCar();
+      save();
+    };
+  }
   const rangeFields = ["speed", "dead"] as const;
   const input = (id: string) => document.querySelector<HTMLInputElement>(`#${id}`)!;
   function reflect() {
+    reflectCar();
     for (const key of booleanFields) input(key).checked = settings[key];
     for (const key of rangeFields) input(key).value = String(settings[key]);
     document.querySelector("#speed-value")!.textContent = `${Math.round(settings.speed * 3.6)} km/t`;

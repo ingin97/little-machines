@@ -27,6 +27,15 @@
         <label><input id="automatic" type="checkbox"> Automatisk gass</label>
         <label><input id="gentle" type="checkbox"> Mykere styring</label>
         <label><input id="reverse" type="checkbox"> Rygg løs automatisk</label>
+        <fieldset class="garage">
+          <legend>Velg bil</legend>
+          <div class="cars">
+            <button type="button" data-car="rally" aria-pressed="true">Rally</button>
+            <button type="button" data-car="beach" aria-pressed="false">Strand</button>
+            <button type="button" data-car="rocket" aria-pressed="false">Rakett</button>
+          </div>
+        </fieldset>
+        <label><input id="sound" type="checkbox"> Spill lyd</label>
         <label><input id="recovery" type="checkbox"> Hjelp etter velt</label>
         <label>Rattets dødsone <output id="dead-value"></output><input id="dead" type="range" min="0" max="30"></label>
         <div class="presets"><button type="button" id="center">Sentrer ratt</button><button type="button" id="pedals">Kalibrer pedaler</button></div>
