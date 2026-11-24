@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { combinedPedals, firstGamepad, steeringDeadZone } from "./driveInput";
 import { TractorGame3D } from "./TractorGame3D";
 import { ConstructionGame3D } from "./ConstructionGame3D";
 import { isVehicleMode, VEHICLES, vehicleConfig, type VehicleMode } from "./vehicleModes";
@@ -8,7 +9,6 @@ import { playUiSound, speakNorwegian, stopSpeech, unlockAudio } from "./gameAudi
 
 type Keys = { left: boolean; right: boolean; up: boolean; down: boolean };
 type WheelState = { id: string; steering: number; pedal: number } | null;
-const clamp = (value: number, min = -1, max = 1) => Math.min(max, Math.max(min, value));
 
 export default function Home() {
   const [wheel, setWheel] = useState<WheelState>(null);
@@ -43,7 +43,7 @@ export default function Home() {
   useEffect(() => {
     let frame = 0;
     const readWheel = () => {
-      const pad = Array.from(navigator.getGamepads?.() ?? []).find((item): item is Gamepad => Boolean(item));
+      const pad = firstGamepad();
       setWheel(pad ? { id: pad.id, steering: pad.axes[0] ?? 0, pedal: pad.axes[1] ?? 0 } : null);
       frame = requestAnimationFrame(readWheel);
     };
@@ -73,11 +73,9 @@ export default function Home() {
   const buttonSteering = Number(touchSteering.right) - Number(touchSteering.left);
   const steering = useMemo(() => {
     const raw = buttonSteering || wheel?.steering || keyboardSteering;
-    return Math.abs(raw) < .08 ? 0 : clamp(raw);
+    return steeringDeadZone(raw);
   }, [wheel?.steering, keyboardSteering, buttonSteering]);
-  const pedal = wheel?.pedal ?? 0;
-  const pedalForward = clamp(-pedal, 0, 1);
-  const pedalReverse = clamp(pedal, 0, 1);
+  const { accelerator: pedalForward, brake: pedalReverse } = combinedPedals(wheel?.pedal ?? 0);
 
   const chooseVehicle = (vehicle: VehicleMode) => {
     unlockAudio();

@@ -27,6 +27,14 @@ pnpm dev
 
 Open the local URL printed by the development server.
 
+## Kjøreparken
+
+Run `pnpm dev` and open `/racing.html` on the URL printed by Vite. The car starts in toddler mode with automatic acceleration. Turn the wheel or use ←/→ or A/D. Use ↓ or S to brake and R to reset. The cross streets meet a wide banked loop. Drive through the purple tunnel, cross the turquoise bridge or pass beneath it, try the ramps, or head off-road to kick footballs and knock down block towers. Turquoise pads give a brief boost within the configured speed limit.
+
+The gear button pauses the game and opens parent settings. The **Normal** preset uses the accelerator and brake pedals or ↑/↓ and W/S. The speed limit and each driving assist can be adjusted independently. If the browser has not registered the wheel, move it or press a wheel button with the game tab focused. Center the wheel or calibrate separate/reversed pedal axes from the same panel if needed.
+
+For the physical-wheel playtest, try steering from a standstill, holding a banked turn, and releasing the wheel to center. Spend a few minutes exploring the roads and grass in toddler mode. Check the view through the tunnel and across a jump, then try braking and recovery in both presets.
+
 ## Verify
 
 ```bash

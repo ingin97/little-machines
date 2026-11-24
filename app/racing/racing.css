@@ -1,0 +1,39 @@
+:root {
+  font: 600 16px system-ui, sans-serif;
+  color: #203437;
+  background: #a5e0e9;
+}
+* { box-sizing: border-box; }
+body { margin: 0; overflow: hidden; }
+canvas { display: block; width: 100vw; height: 100dvh; touch-action: none; }
+.hud { position: absolute; inset: 20px 20px auto; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+h1 { margin: 0; font-size: clamp(20px, 4vw, 32px); letter-spacing: -.05em; }
+button, h1, #status {
+  border: 0;
+  border-radius: 15px;
+  background: #fffbed;
+  color: inherit;
+  padding: .55em .85em;
+  box-shadow: 0 3px 0 #20343735;
+}
+button { font: inherit; cursor: pointer; pointer-events: auto; }
+button:hover { background: #ffdf84; }
+button:focus-visible, input:focus-visible { outline: 3px solid #236e8b; outline-offset: 3px; }
+#settings { font-size: 22px; }
+#status { position: absolute; bottom: 18px; left: 20px; margin: 0; font-size: .85rem; pointer-events: none; }
+.touch { display: none; position: absolute; inset: auto 20px 60px; gap: 8px; }
+.touch button { touch-action: none; min-width: 50px; min-height: 50px; }
+.touch button:nth-child(3) { margin-left: auto; }
+@media (pointer: coarse) { .touch { display: flex; } }
+dialog { width: min(415px, calc(100vw - 32px)); max-height: 92dvh; color: inherit; background: #fffbed; border: none; border-radius: 22px; padding: 22px; box-shadow: 0 12px 45px #20343745; }
+dialog::backdrop { background: #20343775; }
+dialog header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+dialog h2 { font-size: 1.15rem; margin: 0; }
+dialog form { display: grid; gap: 12px; }
+dialog button { background: #e3eee6; }
+dialog label { display: block; }
+dialog input[type=range] { display: block; width: 100%; margin: 6px 0 0; accent-color: #267271; }
+dialog input[type=checkbox] { accent-color: #267271; }
+dialog output { float: right; }
+dialog p { font-size: .85rem; margin: 0; }
+#calibration:empty { display: none; }

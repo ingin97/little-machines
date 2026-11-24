@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="En åpen kjørelekeplass for ratt og tastatur.">
+    <title>Kjøreparken</title>
+  </head>
+  <body>
+    <canvas id="game" aria-label="Kjøreparken"></canvas>
+    <header class="hud">
+      <h1>Kjøreparken</h1>
+      <button id="settings" type="button" aria-label="Foreldreinnstillinger" title="Foreldreinnstillinger">⚙</button>
+    </header>
+    <p id="status" role="status">Laster kjøreparken …</p>
+    <div class="touch" aria-label="Kjørekontroller">
+      <button data-key="arrowleft" aria-label="Sving til venstre">←</button>
+      <button data-key="arrowright" aria-label="Sving til høyre">→</button>
+      <button data-key="arrowdown" aria-label="Brems">▼</button>
+      <button data-key="arrowup" aria-label="Gass">▲</button>
+    </div>
+    <dialog id="parent">
+      <form method="dialog">
+        <header><h2>Foreldreinnstillinger</h2><button value="close" autofocus>Lukk</button></header>
+        <div class="presets"><button type="button" id="toddler">Småbarn</button><button type="button" id="normal">Normal</button></div>
+        <label>Maksfart <output id="speed-value"></output><input id="speed" type="range" min="8" max="36"></label>
+        <label><input id="automatic" type="checkbox"> Automatisk gass</label>
+        <label><input id="gentle" type="checkbox"> Mykere styring</label>
+        <label><input id="reverse" type="checkbox"> Rygg løs automatisk</label>
+        <label><input id="recovery" type="checkbox"> Hjelp etter velt</label>
+        <label>Rattets dødsone <output id="dead-value"></output><input id="dead" type="range" min="0" max="30"></label>
+        <div class="presets"><button type="button" id="center">Sentrer ratt</button><button type="button" id="pedals">Kalibrer pedaler</button></div>
+        <p id="calibration" role="status"></p>
+        <p>Piltaster eller WASD. R setter bilen tilbake.</p>
+        <button type="button" id="reset">Sett bilen tilbake</button>
+      </form>
+    </dialog>
+    <script type="module" src="/app/racing/main.ts"></script>
+  </body>
+</html>

@@ -16,6 +16,7 @@
   "dependencies": {
     "@babylonjs/core": "^9.21.2",
     "@babylonjs/loaders": "^9.21.2",
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "drizzle-orm": "0.45.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"
