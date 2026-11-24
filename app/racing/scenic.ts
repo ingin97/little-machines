@@ -5,7 +5,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { paint, straightRows, type SurfaceRow } from "./surfaces.ts";
+import { paint, shoulderRows, straightRows, type SurfaceRow } from "./surfaces.ts";
 
 const width = 7.5;
 const center = 151;
@@ -32,13 +32,7 @@ export function addScenicLoop(
     };
   });
   paved("scenic loop", rows, true);
-  for (const side of [-1, 1]) {
-    strip("hill shoulder", rows.map((row) => ({
-      ...row, x: row.x + Math.cos(row.heading) * side * (width + 9),
-      z: row.z - Math.sin(row.heading) * side * (width + 9),
-      y: (row.y - .01) * .5, halfWidth: 9, bank: -side * (row.y + .01) * .5,
-    })), grass, true);
-  }
+  for (const side of [-1, 1] as const) strip("hill shoulder", shoulderRows(rows, side, 18), grass, true);
   for (const [z, finish] of [[-40, 105], [0, 83], [40, 105]]) {
     paved("scenic access road", straightRows(76, z, Math.PI / 2, 6.5, [[0, .036], [finish - 76, .036]]));
   }

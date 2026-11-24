@@ -47,16 +47,16 @@ export function createRacingAudio() {
     shot.onended = () => { shot.disconnect(); filter.disconnect(); envelope.disconnect(); };
   }
 
-  function goalChime() {
+  function chime(notes: number[], volume: number) {
     if (!enabled || !mix || mix.context.state !== "running") return;
     const { context, output } = mix;
-    for (const [i, pitch] of [523.25, 659.25, 783.99].entries()) {
+    for (const [i, pitch] of notes.entries()) {
       const at = context.currentTime + i * .085;
       const bell = context.createOscillator();
       const envelope = context.createGain();
       bell.frequency.value = pitch;
       envelope.gain.setValueAtTime(.001, at);
-      envelope.gain.exponentialRampToValueAtTime(.15, at + .017);
+      envelope.gain.exponentialRampToValueAtTime(volume, at + .017);
       envelope.gain.exponentialRampToValueAtTime(.001, at + .33);
       bell.connect(envelope).connect(output);
       bell.start(at);
@@ -65,7 +65,12 @@ export function createRacingAudio() {
     }
   }
 
-  return { update, impact, goalChime };
+  return {
+    update, impact,
+    goalChime: () => chime([523.25, 659.25, 783.99], .15),
+    starChime: () => chime([659.25, 987.77], .11),
+    bowlingChime: () => chime([293.66, 392], .12),
+  };
 }
 
 function buildMix() {

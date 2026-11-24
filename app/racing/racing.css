@@ -8,7 +8,7 @@ body { margin: 0; overflow: hidden; }
 canvas { display: block; width: 100vw; height: 100dvh; touch-action: none; }
 .hud { position: absolute; inset: 20px 20px auto; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
 h1 { margin: 0; font-size: clamp(20px, 4vw, 32px); letter-spacing: -.05em; }
-button, h1, #status {
+button, h1, #status, #local-players {
   border: 0;
   border-radius: 15px;
   background: #fffbed;
@@ -21,6 +21,7 @@ button:hover { background: #ffdf84; }
 button:focus-visible, input:focus-visible { outline: 3px solid #236e8b; outline-offset: 3px; }
 #settings { font-size: 22px; }
 #status { position: absolute; bottom: 18px; left: 20px; margin: 0; font-size: .85rem; pointer-events: none; }
+#local-players { position: absolute; bottom: 18px; right: 20px; margin: 0; font-size: .85rem; pointer-events: none; }
 .touch { display: none; position: absolute; inset: auto 20px 60px; gap: 8px; }
 .touch button { touch-action: none; min-width: 50px; min-height: 50px; }
 .touch button:nth-child(3) { margin-left: auto; }

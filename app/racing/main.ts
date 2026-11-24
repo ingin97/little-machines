@@ -1,7 +1,6 @@
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
-import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.js";
@@ -9,6 +8,8 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { createRacingAudio } from "./audio";
 import { createDrivingParticles } from "./particles";
+import { createChaseCamera } from "./camera";
+import { createLocalMultiplayer } from "./localMultiplayer";
 import { createControls } from "./controls";
 import { createVehicle, stepTime } from "./vehicle";
 import { createWorld, spawn } from "./world";
@@ -46,7 +47,9 @@ async function start() {
   const physics = new RAPIER.World({ x: 0, y: -16, z: 0 });
   physics.timestep = stepTime;
   const playground = createWorld(scene, physics, shadows);
-  const car = createVehicle(scene, physics, shadows, spawn, playground.padAt);
+  const keyboardTab = new URLSearchParams(location.search).get("input") === "keyboard";
+  const startingLane = keyboardTab ? { ...spawn, x: -3.35 } : spawn;
+  const car = createVehicle(scene, physics, shadows, startingLane, playground.padAt);
   const controls = createControls(car.reset);
   const audio = createRacingAudio();
   audio.update(controls.settings.sound, true, 0, true, 0);
@@ -58,59 +61,23 @@ async function start() {
       impact = Math.max(impact, Math.min(1, (event.totalForceMagnitude() - 2800) / 8500));
     }
   };
-  const camera = new FreeCamera("chase", Vector3.Zero(), scene);
-  camera.minZ = .14;
-  camera.maxZ = 300;
-  camera.fov = .93;
-  const target = new Vector3();
-  const desired = new Vector3();
-  const aim = new Vector3();
-  const worldForward = new Vector3();
-  const localForward = new Vector3(0, 0, 1);
-  const localUp = new Vector3(0, 1, 0);
-  const worldUp = new Vector3();
-  const anchor = new Vector3();
-  const sightline = new Vector3();
-  const cameraRay = new RAPIER.Ray(anchor, sightline);
-  let heading = spawn.heading;
-  let lastReset = 0;
+  const chase = createChaseCamera(scene, physics, car, startingLane);
   let accumulator = 0;
-
-  function updateCamera(dt: number) {
-    const p = car.root.position;
-    const attitude = car.root.rotationQuaternion!;
-    localForward.rotateByQuaternionToRef(attitude, worldForward);
-    localUp.rotateByQuaternionToRef(attitude, worldUp);
-    const reset = lastReset !== car.revision();
-    lastReset = car.revision();
-    if (worldUp.y > .42 && worldForward.x ** 2 + worldForward.z ** 2 > .22) {
-      const angle = Math.atan2(worldForward.x, worldForward.z);
-      const delta = Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading));
-      heading += delta * (reset ? 1 : 1 - Math.exp(-4.4 * dt));
-    }
-    const x = Math.sin(heading);
-    const z = Math.cos(heading);
-    desired.set(p.x - x * 8.9, p.y + 4.55, p.z - z * 8.9);
-    aim.set(p.x + x * 3.4, p.y + .54, p.z + z * 3.4);
-    Vector3.LerpToRef(camera.position, desired, reset ? 1 : 1 - Math.exp(-8 * dt), camera.position);
-    // Clamp after smoothing so the camera cannot cross a tunnel roof or bridge deck.
-    anchor.set(p.x, p.y + .58, p.z);
-    camera.position.subtractToRef(anchor, sightline);
-    const distance = sightline.length();
-    if (distance > .01) {
-      sightline.scaleInPlace(1 / distance);
-      const hit = physics.castRay(cameraRay, distance, true, RAPIER.QueryFilterFlags.ONLY_FIXED);
-      if (hit) {
-        sightline.scaleInPlace(Math.max(.24, hit.timeOfImpact - .45));
-        anchor.addToRef(sightline, camera.position);
-      }
-    }
-    Vector3.LerpToRef(target, aim, reset ? 1 : 1 - Math.exp(-7 * dt), target);
-    camera.setTarget(target);
-    sun.position.set(p.x + 18, 42, p.z - 16);
-  }
-
-  updateCamera(0);
+  chase.update(0);
+  const localPlayers = createLocalMultiplayer(scene, () => {
+    const point = car.root.position;
+    const rotation = car.root.rotationQuaternion!;
+    return {
+      position: [point.x, point.y, point.z],
+      rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+      look: controls.settings.car,
+      speed: controls.paused() ? 0 : car.wheelSpeed(),
+      steering: car.steering(),
+      reset: car.revision(),
+    };
+  }, document.querySelector("#local-players")!);
+  window.addEventListener("pagehide", () => localPlayers.disconnect());
+  window.addEventListener("pageshow", () => localPlayers.reconnect());
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) audio.update(controls.settings.sound, false, 0, true, 0);
   });
@@ -121,6 +88,8 @@ async function start() {
     const active = !controls.paused();
     impact = 0;
     let scored = false;
+    let collected = false;
+    let knocked = false;
     if (!active) {
       accumulator = 0;
     } else {
@@ -129,6 +98,9 @@ async function start() {
         car.step(input, controls.settings);
         physics.step(contacts);
         scored = playground.checkGoals(stepTime, car.root.position) || scored;
+        const feedback = playground.stepStuntToys(stepTime, car.position());
+        collected ||= feedback.collected;
+        knocked ||= feedback.knocked;
         contacts.drainContactForceEvents(collectImpact);
         impact = Math.max(impact, car.takeLanding());
         accumulator -= stepTime;
@@ -154,10 +126,14 @@ async function start() {
     if (active) {
       audio.impact(impact);
       if (scored) audio.goalChime();
+      if (collected) audio.starChime();
+      if (knocked) audio.bowlingChime();
       particles.update(dt, car.root.position, car.root.rotationQuaternion!, speed, grounded, boost, impact,
         playground.isGrass(car.root.position));
     }
-    updateCamera(dt);
+    localPlayers.update(dt);
+    chase.update(dt);
+    sun.position.set(car.root.position.x + 18, 42, car.root.position.z - 16);
     scene.render();
   });
   window.addEventListener("resize", () => engine.resize());

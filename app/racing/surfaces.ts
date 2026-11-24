@@ -5,7 +5,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import RAPIER from "@dimforge/rapier3d-compat";
 
-export type SurfaceRow = { x: number; y: number; z: number; heading: number; halfWidth: number; bank?: number };
+export type SurfaceRow = { x: number; y: number; z: number; heading: number; halfWidth: number; bank?: number; crown?: number };
 
 export function straightRows(x: number, z: number, heading: number, halfWidth: number, profile: readonly (readonly [number, number])[]): SurfaceRow[] {
   return profile.map(([distance, y]) => ({
@@ -13,6 +13,47 @@ export function straightRows(x: number, z: number, heading: number, halfWidth: n
     z: z + Math.cos(heading) * distance,
     heading, halfWidth, y,
   }));
+}
+
+export function smoothProfile(profile: readonly (readonly [number, number])[], spacing = 3) {
+  const samples: [number, number][] = [[...profile[0]]];
+  for (let i = 1; i < profile.length; i++) {
+    const [from, bottom] = profile[i - 1];
+    const [to, top] = profile[i];
+    const count = Math.ceil((to - from) / spacing);
+    for (let step = 1; step <= count; step++) {
+      const t = step / count;
+      samples.push([from + (to - from) * t, bottom + (top - bottom) * t * t * (3 - 2 * t)]);
+    }
+  }
+  return samples;
+}
+
+export function arcRows(start: SurfaceRow, radius: number, sweep: number, bank: number, samples = 20): SurfaceRow[] {
+  const signedRadius = Math.sign(sweep) * radius;
+  return Array.from({ length: samples + 1 }, (_, i) => {
+    const t = i / samples;
+    const heading = start.heading + sweep * t;
+    return {
+      ...start, heading,
+      x: start.x + signedRadius * (Math.cos(start.heading) - Math.cos(heading)),
+      z: start.z + signedRadius * (Math.sin(heading) - Math.sin(start.heading)),
+      bank: bank * Math.sin(Math.PI * t) ** 2,
+    };
+  });
+}
+
+export function shoulderRows(rows: SurfaceRow[], side: -1 | 1, width: number, groundY = -.012): SurfaceRow[] {
+  return rows.map((row) => {
+    const offset = side * (row.halfWidth + width / 2);
+    const edge = row.y + side * (row.bank ?? 0) + (row.crown ?? 0);
+    return {
+      ...row, x: row.x + Math.cos(row.heading) * offset,
+      z: row.z - Math.sin(row.heading) * offset,
+      halfWidth: width / 2, y: (edge + groundY) / 2, crown: 0,
+      bank: side * (groundY - edge) / 2,
+    };
+  });
 }
 
 export function surface(
@@ -29,7 +70,7 @@ export function surface(
       uvs.push((band + 1) / 2, rowIndex / (rows.length - 1));
       positions.push(
         row.x + rightX * row.halfWidth * band,
-        row.y + (row.bank ?? 0) * band,
+        row.y + (row.bank ?? 0) * band + (row.crown ?? 0) * band ** 2,
         row.z + rightZ * row.halfWidth * band,
       );
     }
@@ -51,7 +92,7 @@ export function surface(
   mesh.material = material;
   mesh.receiveShadows = true;
   if (physics) {
-    physics.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices))
+    physics.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES_TWO_SIDED)
       .setFriction(.85));
   }
   return mesh;

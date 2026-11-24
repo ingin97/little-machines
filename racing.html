@@ -12,6 +12,7 @@
       <h1>Kjøreparken</h1>
       <button id="settings" type="button" aria-label="Foreldreinnstillinger" title="Foreldreinnstillinger">⚙</button>
     </header>
+    <p id="local-players" role="status" hidden></p>
     <p id="status" role="status">Laster kjøreparken …</p>
     <div class="touch" aria-label="Kjørekontroller">
       <button data-key="arrowleft" aria-label="Sving til venstre">←</button>
@@ -22,8 +23,8 @@
     <dialog id="parent">
       <form method="dialog">
         <header><h2>Foreldreinnstillinger</h2><button value="close" autofocus>Lukk</button></header>
-        <div class="presets"><button type="button" id="toddler">Småbarn</button><button type="button" id="normal">Normal</button></div>
-        <label>Maksfart <output id="speed-value"></output><input id="speed" type="range" min="8" max="36"></label>
+        <div class="presets"><button type="button" id="slow">Sakte</button><button type="button" id="toddler">Småbarn</button><button type="button" id="normal">Normal</button></div>
+        <label>Maksfart <output id="speed-value"></output><input id="speed" type="range" min="2" max="36"></label>
         <label><input id="automatic" type="checkbox"> Automatisk gass</label>
         <label><input id="gentle" type="checkbox"> Mykere styring</label>
         <label><input id="reverse" type="checkbox"> Rygg løs automatisk</label>
@@ -35,6 +36,7 @@
             <button type="button" data-car="rocket" aria-pressed="false">Rakett</button>
           </div>
         </fieldset>
+        <label><input id="keyboard-only" type="checkbox"> Kun tastatur og berøring i denne fanen</label>
         <label><input id="sound" type="checkbox"> Spill lyd</label>
         <label><input id="recovery" type="checkbox"> Hjelp etter velt</label>
         <label>Rattets dødsone <output id="dead-value"></output><input id="dead" type="range" min="0" max="30"></label>

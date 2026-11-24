@@ -7,6 +7,8 @@ import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator.
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { createChaseCamera } from "../app/racing/camera.ts";
+import { createControllerHandoff } from "../app/racing/handoff.ts";
 import { createDrivingParticles } from "../app/racing/particles.ts";
 import { createVehicle, stepTime } from "../app/racing/vehicle.ts";
 import { boundary, createWorld, spawn } from "../app/racing/world.ts";
@@ -30,6 +32,8 @@ function playground(t) {
   const settings = { automatic: true, gentle: true, reverse: true, recovery: true, speed: 15, dead: 8, calibration: null };
 
   let goals = 0;
+  let stars = 0;
+  let strikes = 0;
   function drive(seconds, input = {}, sample = () => {}) {
     const controls = { steer: 0, accelerator: 0, brake: 0, ...input };
     for (let i = 0; i < Math.round(seconds / stepTime); i++) {
@@ -37,15 +41,18 @@ function playground(t) {
       physics.step();
       car.sync();
       if (world.checkGoals(stepTime, car.root.position)) goals++;
+      const feedback = world.stepStuntToys(stepTime, car.position());
+      stars += Number(feedback.collected);
+      strikes += Number(feedback.knocked);
       world.sync(car.root.position, car.boost(), stepTime);
       sample(car.root.position);
     }
   }
-  function place(x, z, heading = 0) {
-    car.reset({ x, y: spawn.y, z, heading });
+  function place(x, z, heading = 0, y = spawn.y) {
+    car.reset({ x, y, z, heading });
   }
 
-  return { car, chassis, bodies, settings, physics, scene, drive, place, goals: () => goals };
+  return { car, chassis, bodies, settings, physics, scene, drive, place, goals: () => goals, stars: () => stars, strikes: () => strikes };
 }
 
 test("boost respects the speed cap and both bridge levels and tunnel stay driveable", (t) => {
@@ -203,4 +210,119 @@ test("a kicked football scores once and waits to re-serve if the car blocks its 
   chassis.setTranslation({ x: 20, y: .87, z: -40 }, true);
   drive(1);
   assert.ok(Math.abs(ball.translation().z + 29) < .15);
+});
+
+
+test("lost wheels park until a neutral reconnect or keyboard takeover", () => {
+  const handoff = createControllerHandoff();
+  assert.equal(handoff(undefined, true, false), "controller");
+  assert.equal(handoff("wheel", true, false), "controller");
+  assert.equal(handoff(undefined, true, false), "park");
+  assert.equal(handoff("wheel", false, false), "park");
+  assert.equal(handoff("wheel", false, true), "keyboard");
+  assert.equal(handoff("wheel", false, false), "keyboard");
+  assert.equal(handoff("wheel", true, false), "keyboard");
+  assert.equal(handoff("wheel", true, false), "controller");
+  assert.equal(handoff("another pad", false, false), "park");
+});
+
+test("the lowest speed remains steerable and parking prevents automatic throttle", (t) => {
+  const { chassis, car, drive, place, settings } = playground(t);
+  settings.speed = 2;
+  place(12, -42);
+  let peak = 0;
+  drive(5, { steer: .55 }, () => { peak = Math.max(peak, car.speed()); });
+  assert.ok(peak > 1.15 && peak < 2.1);
+  assert.ok(car.root.position.x > 14);
+  drive(1, { parking: true });
+  assert.ok(Math.hypot(chassis.linvel().x, chassis.linvel().z) < .22);
+  const parked = car.root.position.clone();
+  const revision = car.revision();
+  drive(6, { parking: true });
+  assert.ok(Vector3.Distance(parked, car.root.position) < .4);
+  assert.equal(car.revision(), revision);
+  drive(2);
+  assert.ok(Vector3.Distance(parked, car.root.position) > 1.5);
+});
+
+test("slow driving reaches the stunt summit and stays controlled down the main slope", (t) => {
+  const { car, drive, place, settings } = playground(t);
+  settings.speed = 4;
+  place(-79, 48, -Math.PI / 2);
+  drive(24);
+  assert.ok(car.root.position.x < -140 && car.root.position.y > 10);
+  place(-151, 49, Math.PI, 11.87);
+  let peak = 0;
+  drive(27, {}, () => { peak = Math.max(peak, car.speed()); });
+  assert.ok(car.root.position.z < -30 && car.root.position.y < 3.4);
+  assert.ok(peak < 4.6);
+});
+
+test("the halfpipe has a traversable curved wall and flat open ends", (t) => {
+  const { car, physics, drive, place, settings } = playground(t);
+  settings.speed = 8;
+  place(-116, -39, Math.PI / 2);
+  let peak = 0;
+  drive(5, {}, ({ y }) => { peak = Math.max(peak, y); });
+  assert.ok(peak > 3 && car.root.position.x > -98);
+  const height = (x, z) => {
+    const ray = new RAPIER.Ray({ x, y: 20, z }, { x: 0, y: -1, z: 0 });
+    return 20 - physics.castRay(ray, 24, true, RAPIER.QueryFilterFlags.ONLY_FIXED).timeOfImpact;
+  };
+  assert.ok(height(-106, -39) - height(-116, -39) > 2);
+  assert.ok(height(-106, -13) < .15 && height(-106, -65) < .15);
+});
+
+test("the car can knock over bowling pins and revisit collectible stars", (t) => {
+  const { car, scene, drive, place, stars, strikes, settings } = playground(t);
+  settings.speed = 5;
+  place(-96, 10, -Math.PI / 2);
+  drive(5);
+  assert.ok(strikes() > 0);
+  place(-12, -22);
+  drive(2);
+  assert.equal(stars(), 1);
+  drive(1);
+  assert.equal(stars(), 1);
+  assert.ok(scene.meshes.some((mesh) => mesh.name === "collectible star" && !mesh.isEnabled()));
+  place(-30, -43);
+  drive(stepTime);
+  assert.ok(scene.meshes.filter((mesh) => mesh.name === "collectible star").every((mesh) => mesh.isEnabled()));
+  place(-12, -22);
+  drive(2);
+  assert.equal(stars(), 2);
+  assert.ok(car.root.position.z > -18);
+});
+
+test("a wedged car reverses away on its own", (t) => {
+  const { car, physics, drive, place, settings } = playground(t);
+  settings.speed = 4;
+  physics.createCollider(RAPIER.ColliderDesc.cuboid(2, 1, .5).setTranslation(13, 1, -23));
+  place(13, -33);
+  drive(3.7);
+  let backedUp = false;
+  let previousZ = car.root.position.z;
+  drive(7, {}, ({ z }) => { backedUp ||= z < previousZ - .012; previousZ = z; });
+  assert.ok(backedUp);
+  assert.ok(car.root.position.z > -22 || Math.abs(car.root.position.x - 13) > 2.4);
+});
+
+
+test("the chase camera pulls in before a wall and eases back when clear", (t) => {
+  const { car, scene, physics, place } = playground(t);
+  const wall = physics.createCollider(RAPIER.ColliderDesc.cuboid(2, 2, .3).setTranslation(8, 2, -33));
+  place(8, -30);
+  physics.step();
+  car.sync();
+  const chase = createChaseCamera(scene, physics, car, spawn);
+  chase.update(stepTime);
+  const close = chase.camera.position.z;
+  assert.ok(close > -32.65 && close < -30.5);
+
+  physics.removeCollider(wall, true);
+  physics.step();
+  chase.update(stepTime);
+  assert.ok(chase.camera.position.z < close && chase.camera.position.z > close - 1);
+  for (let i = 0; i < 90; i++) chase.update(stepTime);
+  assert.ok(chase.camera.position.z < -36.5);
 });

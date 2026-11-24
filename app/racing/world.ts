@@ -10,10 +10,12 @@ import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilde
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder.js";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { addFootballGoal } from "./goal.ts";
+import { createStuntToys } from "./stuntToys.ts";
+import { addStuntArea } from "./stunts.ts";
 import { addScenicLoop } from "./scenic.ts";
 import { createLandmarks } from "./landmarks.ts";
 import { createPlaythings } from "./playthings.ts";
-import { paint, straightRows, surface, type SurfaceRow } from "./surfaces.ts";
+import { paint, shoulderRows, straightRows, surface, type SurfaceRow } from "./surfaces.ts";
 
 export type Spawn = { x: number; y: number; z: number; heading: number };
 export const spawn: Spawn = { x: 0, y: .87, z: -8, heading: 0 };
@@ -54,13 +56,13 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     return mesh;
   }
 
-  function strip(name: string, rows: SurfaceRow[], material: StandardMaterial, solid = false) {
-    const mesh = surface(scene, name, material, rows, flat, solid ? physics : undefined);
+  function strip(name: string, rows: SurfaceRow[], material: StandardMaterial, solid = false, bands: readonly number[] = flat) {
+    const mesh = surface(scene, name, material, rows, bands, solid ? physics : undefined);
     staticPieces.push(mesh);
   }
 
-  function paved(name: string, rows: SurfaceRow[], solid = false) {
-    strip(name, rows, road, solid);
+  function paved(name: string, rows: SurfaceRow[], solid = false, bands?: readonly number[]) {
+    strip(name, rows, road, solid, bands);
     const marks = rows.map((row) => ({ ...row, y: row.y + .023 }));
     for (const side of [-1, 1]) {
       staticPieces.push(surface(scene, "road edge", edge, marks, [side * .92 - .022, side * .92 + .022]));
@@ -136,7 +138,7 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     }
   }
 
-  for (const [x, z, halfWidth, height] of [[-30, 85, 20, 6], [39, -63, 17, 4.2], [103, 28, 19, 5.4], [-114, -30, 21, 6.4]]) {
+  for (const [x, z, halfWidth, height] of [[-30, 85, 20, 6], [39, -63, 17, 4.2], [103, 28, 19, 5.4], [-109, -132, 21, 6.4]]) {
     // Rings taper to the grass so every side can be driven up and over.
     const rings: SurfaceRow[] = Array.from({ length: 25 }, (_, i) => {
       const angle = i / 24 * Math.PI * 2;
@@ -153,12 +155,7 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
   for (const { x, z, halfWidth, profile } of jumps) {
     const rows = straightRows(x, z, 0, halfWidth, profile);
     strip("jump ramp", rows, sand, true);
-    for (const side of [-1, 1]) {
-      const shoulders = rows.map((row) => ({
-        ...row, x: row.x + side * (halfWidth + 3), y: row.y * .5, bank: -side * row.y * .5, halfWidth: 3,
-      }));
-      strip("ramp shoulder", shoulders, grassHill, true);
-    }
+    for (const side of [-1, 1] as const) strip("ramp shoulder", shoulderRows(rows, side, 6, 0), grassHill, true);
     const lip = profile[profile.length - 2];
     box("jump marker", [halfWidth * 1.82, .09, .45], [x, lip[1] + .056, z + lip[0] - .2], orange);
   }
@@ -189,6 +186,7 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     }
   }
 
+  const stunts = addStuntArea(scene, staticPieces, paved, strip);
   const scenic = addScenicLoop(scene, staticPieces, paved, strip);
   const footballGoal = addFootballGoal(scene, staticPieces);
   addScenery(scene, staticPieces);
@@ -210,8 +208,10 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     if (shadowMaterials.has(material)) shadows.addShadowCaster(mesh);
   }
 
+  const stuntToys = createStuntToys(scene, physics, shadows);
   const playthings = createPlaythings(scene, physics, shadows);
   return {
+    stepStuntToys: stuntToys.step,
     checkGoals(dt: number, car: Vector3) {
       const scored = playthings.checkGoals(dt, car);
       if (scored) footballGoal.celebrate();
@@ -225,12 +225,13 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
         || (az <= 54 && Math.abs(ax - 76) < 7)
         || (ax >= 54 && az >= 54 && Math.abs(corner - 22) < 7);
       const bridge = ax < 52 && Math.abs(z - 53) < 6 && y > 1;
-      return !scenic.onRoad({ x, z }) && !loop && !bridge && !(ax < 6.5 && az < 83) && !(az < 6.5 && ax < 83);
+      return !stunts.onRoad(x, z) && !scenic.onRoad({ x, z }) && !loop && !bridge && !(ax < 6.5 && az < 83) && !(az < 6.5 && ax < 83);
     },
     padAt: ({ x, y, z }: RAPIER.Vector) => y > .35 && y < 1.45
       ? pads.findIndex((pad) => Math.abs(x - pad.x) < pad.halfX && Math.abs(z - pad.z) < pad.halfZ)
       : -1,
     sync: (car: Vector3, boost: number, dt = 0) => {
+      stuntToys.render(dt);
       landmarks.update(dt);
       scenic.update(dt);
       footballGoal.update(dt);
@@ -249,7 +250,7 @@ function addScenery(scene: Scene, pieces: Mesh[]) {
   const trunk = paint(scene, "#ad7958");
   for (let i = 0; i < 26; i++) {
     const angle = i * 2.39996;
-    const distance = (Math.sin(angle) > .69 ? 251 : 147) + (i % 5) * 7;
+    const distance = (Math.abs(Math.sin(angle)) > .68 ? 251 : 147) + (i % 5) * 7;
     const x = Math.sin(angle) * distance;
     const z = Math.cos(angle) * distance;
     const hill = CreateIcoSphere("distant hill", { radius: 1, subdivisions: 2, flat: true }, scene);

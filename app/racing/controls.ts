@@ -1,16 +1,18 @@
+import { createControllerHandoff } from "./handoff.ts";
 import { isCarLook, type CarLook } from "./looks";
-import { availableGamepads, clamp, combinedPedals, firstGamepad, steeringDeadZone } from "../driveInput";
+import { availableGamepads, clamp, combinedPedals, firstGamepad } from "../driveInput";
 
 type PedalAxis = { index: number; rest: number; pressed: number };
 type Calibration = { id: string; center: number; accelerator?: PedalAxis; brake?: PedalAxis };
 
-const toddler = { speed: 15, automatic: true, gentle: true, reverse: true, recovery: true };
-const normal = { speed: 28, automatic: false, gentle: false, reverse: false, recovery: false };
+const toddler = { speed: 11, automatic: true, gentle: true, reverse: true, recovery: true };
+const normal = { ...toddler, speed: 28, automatic: false, gentle: false };
+const slow = { ...toddler, speed: 4 };
 const defaults = { ...toddler, sound: true, car: "rally" as CarLook, dead: 8, calibration: null as Calibration | null };
 const storageKey = "little-machines-racing-controls";
 
 export type DrivingSettings = typeof defaults;
-export type DriveInput = { steer: number; accelerator: number; brake: number };
+export type DriveInput = { steer: number; accelerator: number; brake: number; parking?: boolean };
 
 function loadSettings(): DrivingSettings {
   try {
@@ -18,7 +20,7 @@ function loadSettings(): DrivingSettings {
     return {
       sound: typeof saved?.sound === "boolean" ? saved.sound : defaults.sound,
       car: isCarLook(saved?.car) ? saved.car : defaults.car,
-      speed: Number.isFinite(saved?.speed) ? clamp(saved.speed, 8, 36) : defaults.speed,
+      speed: Number.isFinite(saved?.speed) ? clamp(saved.speed, 2, 36) : defaults.speed,
       dead: Number.isFinite(saved?.dead) ? clamp(saved.dead, 0, 30) : defaults.dead,
       automatic: typeof saved?.automatic === "boolean" ? saved.automatic : defaults.automatic,
       gentle: typeof saved?.gentle === "boolean" ? saved.gentle : defaults.gentle,
@@ -40,7 +42,11 @@ export function createControls(reset: () => void) {
   const keys = new Set<string>();
   const touch = new Map<number, string>();
   const keyGroups = ["arrowleft", "arrowright", "arrowup", "arrowdown", "a", "d", "w", "s"];
+  const handoff = createControllerHandoff();
+  const keyboardOnly = document.querySelector<HTMLInputElement>("#keyboard-only")!;
+  keyboardOnly.checked = new URLSearchParams(location.search).get("input") === "keyboard";
   let pad: Gamepad | undefined;
+  let activeDevice: string | undefined;
   let lastStatus = "";
   let capture: { id: string; rest: number[]; accelerator?: PedalAxis } | undefined;
 
@@ -97,7 +103,7 @@ export function createControls(reset: () => void) {
 
   for (const key of booleanFields) input(key).onchange = () => { settings[key] = input(key).checked; save(); };
   for (const key of rangeFields) input(key).oninput = () => { settings[key] = +input(key).value; reflect(); save(); };
-  for (const [id, preset] of [["toddler", toddler], ["normal", normal]] as const) {
+  for (const [id, preset] of [["slow", slow], ["toddler", toddler], ["normal", normal]] as const) {
     document.querySelector<HTMLButtonElement>(`#${id}`)!.onclick = () => {
       Object.assign(settings, preset);
       reflect();
@@ -163,17 +169,26 @@ export function createControls(reset: () => void) {
     help.textContent = "Pedalene er lagret.";
   };
 
+  function cancelCalibration() {
+    if (!capture) return;
+    capture = undefined;
+    pedalButton.textContent = "Kalibrer pedaler";
+    help.textContent = "Koble til rattet for å fortsette.";
+  }
+
+  window.addEventListener("gamepaddisconnected", (event) => {
+    if (activeDevice !== `${event.gamepad.index}:${event.gamepad.id}`) return;
+    handoff(undefined, false, false);
+    cancelCalibration();
+  });
+
   function read(): DriveInput {
-    const pads = availableGamepads();
+    const pads = Array.from(availableGamepads()).filter((device) => device?.connected);
     // Prefer a wheel over a standard-mapped controller when both are connected.
     pad = firstGamepad(Array.from(pads).filter((device) => device?.mapping !== "standard")) ?? firstGamepad(pads);
-    const label = pad
-      ? (pad.mapping === "standard" ? "Håndkontroll tilkoblet" : "Ratt tilkoblet")
-      : "Piltaster · WASD · R";
-    if (label !== lastStatus) {
-      status.textContent = label;
-      lastStatus = label;
-    }
+    const device = pad && `${pad.index}:${pad.id}`;
+    if (activeDevice && device !== activeDevice) cancelCalibration();
+    activeDevice = device;
 
     const touchKeys = [...touch.values()];
     const pressed = (key: string) => keys.has(key) || touchKeys.includes(key);
@@ -181,7 +196,11 @@ export function createControls(reset: () => void) {
     const mapping = pad && calibration(pad);
     const center = mapping?.center ?? 0;
     const offset = (pad?.axes[0] ?? 0) - center;
-    const steer = steeringDeadZone(offset / (1 - Math.sign(offset) * center), settings.dead / 100);
+    const range = offset / (1 - Math.sign(offset) * center);
+    const deadZone = settings.dead / 100;
+    const steer = Number.isFinite(range)
+      ? Math.sign(range) * clamp((Math.abs(range) - deadZone) / (1 - deadZone), 0, 1)
+      : 0;
     const pedals = combinedPedals(pad?.axes[1] ?? 0);
     const readPedal = ({ index, rest, pressed }: PedalAxis) => {
       const value = pad?.axes[index];
@@ -194,10 +213,25 @@ export function createControls(reset: () => void) {
       pedals.accelerator = pad.buttons[7]?.value ?? 0;
       pedals.brake = pad.buttons[6]?.value ?? 0;
     }
+    const keyboardThrottle = Number(pressed("arrowup") || pressed("w"));
+    const keyboardBrake = Number(pressed("arrowdown") || pressed("s"));
+    const keyboardActive = Boolean(keys.size || touchKeys.length);
+    const neutral = Math.abs(steer) < .13 && pedals.accelerator < .12 && pedals.brake < .12;
+    const source = keyboardOnly.checked ? "keyboard" : handoff(device, neutral, keyboardActive);
+    const parking = source === "park";
+    const usePad = source === "controller";
+    const label = parking
+      ? pad ? "Sentrer rattet og slipp pedalene · eller bruk piltastene" : "Ratt frakoblet · bruk piltastene eller koble til igjen"
+      : pad && usePad ? (pad.mapping === "standard" ? "Håndkontroll tilkoblet" : "Ratt tilkoblet") : "Piltaster · WASD · R";
+    if (label !== lastStatus) {
+      status.textContent = label;
+      lastStatus = label;
+    }
     return {
-      steer: keyboardSteer || steer,
-      accelerator: Math.max(Number(pressed("arrowup") || pressed("w")), pedals.accelerator),
-      brake: Math.max(Number(pressed("arrowdown") || pressed("s")), pedals.brake),
+      steer: parking ? 0 : keyboardSteer || (usePad ? steer : 0),
+      accelerator: parking ? 0 : Math.max(keyboardThrottle, usePad ? pedals.accelerator : 0),
+      brake: parking ? 0 : Math.max(keyboardBrake, usePad ? pedals.brake : 0),
+      parking,
     };
   }
 
