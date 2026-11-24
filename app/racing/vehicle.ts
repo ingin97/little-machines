@@ -13,8 +13,12 @@ const up = new Vector3();
 const forward = new Vector3();
 const attitude = new Quaternion();
 export const stepTime = 1 / 60;
+export const sprintTopSpeed = 38;
 
-export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, spawn: Spawn, padAt: (position: RAPIER.Vector) => number) {
+const playgroundHandling = { engineForce: 2200, brakeForce: 30, grip: 2.2, sideGrip: 1.15, highSpeedSteerRate: 10, powerTaper: 3, crestLift: 0, keepLandingSpeed: false, smoothLandingSteer: false, manualReverseSpeed: 0 };
+export const sprintHandling = { engineForce: 2350, brakeForce: 9, grip: 2.7, sideGrip: 1.35, highSpeedSteerRate: 4.8, powerTaper: 7, crestLift: 2.1, keepLandingSpeed: true, smoothLandingSteer: true, manualReverseSpeed: 6 };
+
+export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, spawn: Spawn, padAt: (position: RAPIER.Vector) => number, handling = playgroundHandling) {
   const body = physics.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
     .setLinearDamping(.14).setAngularDamping(1.4).setCcdEnabled(true));
   const contactEvents = RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS;
@@ -34,8 +38,8 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     controller.setWheelSuspensionRelaxation(i, 4.1);
     controller.setWheelMaxSuspensionTravel(i, .23);
     controller.setWheelMaxSuspensionForce(i, 3000);
-    controller.setWheelFrictionSlip(i, 2.2);
-    controller.setWheelSideFrictionStiffness(i, 1.15);
+    controller.setWheelFrictionSlip(i, handling.grip);
+    controller.setWheelSideFrictionStiffness(i, handling.sideGrip);
   }
 
   let steering = 0;
@@ -56,6 +60,8 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
   let groundedWheels = 0;
   let airborneTime = 0;
   let landing = 0;
+  let launchCooldown = 0;
+  let steeringGrip = 1;
   let pitch = 0;
   let roll = 0;
   let braking = false;
@@ -87,8 +93,9 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     boostTime = 0;
     occupiedPad = -1;
     checkpoint = { ...at };
-    currentSpeed = previousSpeed = groundedWheels = airborneTime = landing = pitch = roll = 0;
+    currentSpeed = previousSpeed = groundedWheels = airborneTime = landing = launchCooldown = pitch = roll = 0;
     braking = false;
+    steeringGrip = 1;
     lastPosition.set(at.x, at.y, at.z);
     lastRotation.copyFrom(Quaternion.RotationAxis(localUp, at.heading));
     revision++;
@@ -107,7 +114,7 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     for (const [i, { pivot, spin }] of wheels.entries()) {
       const length = clamp(controller.wheelSuspensionLength(i) ?? restLength, restLength - .23, restLength + .23);
       pivot.position.y += (axleHeight - length - pivot.position.y) * blend;
-      pivot.rotation.y = i < 2 ? steering : 0;
+      pivot.rotation.y = i < 2 ? steering * steeringGrip : 0;
       spin.rotation.x = controller.wheelRotation(i) ?? 0;
     }
   }
@@ -148,7 +155,9 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     }
 
     const throttle = input.parking ? 0 : settings.automatic ? 1 : input.accelerator;
-    const brake = input.parking ? .36 : input.brake > .08 ? input.brake : 0;
+    const reversing = Boolean(handling.manualReverseSpeed && !input.parking && input.brake > .08
+      && input.accelerator <= .08 && speed < .55 && (speed < -.1 || planarSpeed < 1));
+    const brake = reversing ? 0 : input.parking ? .36 : input.brake > .08 ? input.brake : 0;
     braking = brake > 0;
     currentSpeed = planarSpeed;
     groundedWheels = contacts;
@@ -181,31 +190,72 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     const targetAngle = (settings.gentle ? .60 : .56) / (1 + planarSpeed * (settings.gentle ? .086 : .053));
     const proportional = settings.gentle ? input.steer * (.78 + .22 * input.steer ** 2) : input.steer;
     const steer = backingOut ? reversingSide * .72 + proportional * .25 : proportional;
-    steering += (steer * targetAngle - steering) * (1 - Math.exp(-(input.parking ? 14 : 10) * stepTime));
+    const targetSteering = steer * targetAngle;
+    const buildingSteer = Math.sign(targetSteering) !== Math.sign(steering) || Math.abs(targetSteering) > Math.abs(steering);
+    const steerRate = buildingSteer && steer !== 0
+      ? 10 + (handling.highSpeedSteerRate - 10) * clamp((planarSpeed - 8) / 22, 0, 1)
+      : 10;
+    steering += (targetSteering - steering) * (1 - Math.exp(-(input.parking ? 14 : steerRate) * stepTime));
     const cap = settings.automatic && !boosting && input.accelerator < .12 ? settings.speed * .81 : settings.speed;
-    const boostForce = boosting && grounded ? 3800 : 2200 * throttle;
-    const approach = boosting ? Math.min(1.2, cap * .33) : Math.min(3, cap * .38);
-    const drive = backingOut ? -1450 * clamp((speed + reverseCap) / 1.6, 0, 1)
-      : brake ? 0 : boostForce * clamp((cap - planarSpeed) / approach, 0, 1);
+    const boostForce = boosting && grounded ? 3800 : handling.engineForce * throttle;
+    const approach = boosting ? Math.min(1.2, cap * .33) : Math.min(handling.powerTaper, cap * .38);
+    const manualReverseForce = -handling.engineForce * .55 * input.brake
+      * clamp((speed + handling.manualReverseSpeed) / 1.6, 0, 1);
+    const drive = reversing ? manualReverseForce
+      : backingOut ? -1450 * clamp((speed + reverseCap) / 1.6, 0, 1)
+        : brake ? 0 : boostForce * clamp((cap - planarSpeed) / approach, 0, 1);
 
-    const speedBraking = clamp((planarSpeed - settings.speed + .25) * 7, 0, 22);
-    for (let i = 0; i < wheels.length; i++) {
-      controller.setWheelSteering(i, i < 2 ? steering : 0);
-      controller.setWheelEngineForce(i, drive / wheels.length);
-      controller.setWheelBrake(i, Math.max(brake * 30, speedBraking, .15));
+    if (handling.smoothLandingSteer) {
+      // Restore steering as the suspension loads again so a tap can't yank one loaded tire.
+      steeringGrip = contacts < 2 && planarSpeed > 9
+        ? .28
+        : Math.min(1, steeringGrip + stepTime / .24);
     }
+    const speedBraking = clamp((planarSpeed - settings.speed + .25) * 7, 0, Math.min(22, handling.brakeForce));
+    for (let i = 0; i < wheels.length; i++) {
+      controller.setWheelSteering(i, i < 2 ? steering * steeringGrip : 0);
+      if (handling.smoothLandingSteer) {
+        controller.setWheelSideFrictionStiffness(i, handling.sideGrip * (.5 + .5 * steeringGrip));
+      }
+      controller.setWheelEngineForce(i, drive / wheels.length);
+      controller.setWheelBrake(i, Math.max(brake * handling.brakeForce, speedBraking, .15));
+    }
+    const frontOnRoad = controller.wheelIsInContact(0) || controller.wheelIsInContact(1);
     if (!grounded && up.y > -.6) {
       const angular = body.angvel();
-      const strength = settings.gentle ? 280 : 135;
+      const strength = settings.gentle || handling.crestLift ? 280 : 135;
       body.applyTorqueImpulse({
         x: (-up.z * strength - angular.x * 50) * stepTime,
-        y: input.steer * (settings.gentle ? 12 : 62) * stepTime,
+        y: input.steer * (settings.gentle ? 12 : handling.smoothLandingSteer ? 22 : 62) * stepTime,
         z: (up.x * strength - angular.z * 50) * stepTime,
       }, true);
     }
     controller.updateVehicle(stepTime, undefined, undefined, (collider) => collider.parent()?.handle !== body.handle);
+    launchCooldown = Math.max(0, launchCooldown - stepTime);
+    // At a fast crest, lift the chassis as the front tires clear the road so the tail follows them.
+    if (handling.crestLift && !launchCooldown && frontOnRoad
+      && !controller.wheelIsInContact(0) && !controller.wheelIsInContact(1)
+      && speed > 19 && velocity.y > .55 && forward.y > .035 && up.y > .8) {
+      body.applyImpulse({ x: 0, y: body.mass() * handling.crestLift, z: 0 }, true);
+      const angular = body.angvel();
+      body.applyTorqueImpulse({ x: clamp(-angular.x * 110, 0, 85), y: 0, z: 0 }, true);
+      launchCooldown = 1.1;
+    }
     if (wheels.some((_, i) => controller.wheelIsInContact(i))) {
       if (airborneTime > .18 && velocity.y < -2.6) landing = clamp((-velocity.y - 2.6) / 9, .15, 1);
+      if (handling.keepLandingSpeed && airborneTime > .12 && velocity.y < -.8
+        && up.y > .78 && !input.parking && input.brake <= .08 && settings.speed >= 15) {
+        // The suspension can sap forward speed on its first contact. Preserve speed in the
+        // direction the tires are already moving and let Rapier resolve any chassis collisions.
+        const touchdown = body.linvel();
+        const touchdownSpeed = Math.hypot(touchdown.x, touchdown.z);
+        const alignment = touchdown.x * velocity.x + touchdown.z * velocity.z;
+        if (touchdownSpeed > 1 && touchdownSpeed < planarSpeed
+          && alignment > .94 * touchdownSpeed * planarSpeed) {
+          const scale = planarSpeed / touchdownSpeed;
+          body.setLinvel({ x: touchdown.x * scale, y: touchdown.y, z: touchdown.z * scale }, true);
+        }
+      }
       airborneTime = 0;
     } else {
       airborneTime += stepTime;
@@ -215,8 +265,8 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
   reset();
   return {
     root, reset, sync, step, setLook,
-    position: () => body.translation(), revision: () => revision, boost: () => Math.min(1, boostTime * 2),
-    steering: () => steering, wheelSpeed: () => previousSpeed,
+    position: () => body.translation(), rotation: () => body.rotation(), revision: () => revision, boost: () => Math.min(1, boostTime * 2),
+    steering: () => steering * steeringGrip, wheelRotation: () => controller.wheelRotation(0) ?? 0, wheelSpeed: () => previousSpeed,
     speed: () => currentSpeed, grounded: () => groundedWheels > 0,
     ownsCollider: (handle: number) => handle === chassis.handle || handle === cabin.handle,
     takeLanding: () => { const strength = landing; landing = 0; return strength; },

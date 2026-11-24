@@ -10,8 +10,26 @@
     <canvas id="game" aria-label="Kjøreparken"></canvas>
     <header class="hud">
       <h1>Kjøreparken</h1>
+      <nav class="mode-actions" aria-label="Spillmodus">
+        <a id="sprint-mode" href="?mode=sprint">Tidkjøring</a>
+        <a id="park-mode" href="./racing.html" hidden>Kjøreparken</a>
+        <button id="sprint-retry" type="button" title="R eller Start på håndkontroll" hidden>Prøv igjen <kbd>R</kbd></button>
+      </nav>
       <button id="settings" type="button" aria-label="Foreldreinnstillinger" title="Foreldreinnstillinger">⚙</button>
     </header>
+    <section id="sprint-hud" aria-label="Tid og porter" hidden>
+      <dl class="sprint-times">
+        <div><dt>Tid</dt><dd id="sprint-clock">0,00 s</dd></div>
+        <div><dt>Rekord</dt><dd id="sprint-best">–</dd></div>
+      </dl>
+      <div class="sprint-gates" id="sprint-progress"></div>
+      <nav class="sprint-tracks" aria-label="Velg løype">
+        <a data-track="meadow" href="?mode=sprint">Engsprint</a>
+        <a data-track="ridge" href="?mode=sprint&amp;track=ridge">Bergsprint</a>
+      </nav>
+      <p id="sprint-message" role="status"></p>
+      <p id="sprint-split" role="status"></p>
+    </section>
     <p id="local-players" role="status" hidden></p>
     <p id="status" role="status">Laster kjøreparken …</p>
     <div class="touch" aria-label="Kjørekontroller">
@@ -23,11 +41,11 @@
     <dialog id="parent">
       <form method="dialog">
         <header><h2>Foreldreinnstillinger</h2><button value="close" autofocus>Lukk</button></header>
-        <div class="presets"><button type="button" id="slow">Sakte</button><button type="button" id="toddler">Småbarn</button><button type="button" id="normal">Normal</button></div>
-        <label>Maksfart <output id="speed-value"></output><input id="speed" type="range" min="2" max="36"></label>
-        <label><input id="automatic" type="checkbox"> Automatisk gass</label>
-        <label><input id="gentle" type="checkbox"> Mykere styring</label>
-        <label><input id="reverse" type="checkbox"> Rygg løs automatisk</label>
+        <div class="presets park-setting"><button type="button" id="slow">Sakte</button><button type="button" id="toddler">Småbarn</button><button type="button" id="normal">Normal</button></div>
+        <label class="park-setting">Maksfart <output id="speed-value"></output><input id="speed" type="range" min="2" max="36"></label>
+        <label class="park-setting"><input id="automatic" type="checkbox"> Automatisk gass</label>
+        <label class="park-setting"><input id="gentle" type="checkbox"> Mykere styring</label>
+        <label class="park-setting"><input id="reverse" type="checkbox"> Rygg løs automatisk</label>
         <fieldset class="garage">
           <legend>Velg bil</legend>
           <div class="cars">
@@ -38,7 +56,7 @@
         </fieldset>
         <label><input id="keyboard-only" type="checkbox"> Kun tastatur og berøring i denne fanen</label>
         <label><input id="sound" type="checkbox"> Spill lyd</label>
-        <label><input id="recovery" type="checkbox"> Hjelp etter velt</label>
+        <label class="park-setting"><input id="recovery" type="checkbox"> Hjelp etter velt</label>
         <label>Rattets dødsone <output id="dead-value"></output><input id="dead" type="range" min="0" max="30"></label>
         <div class="presets"><button type="button" id="center">Sentrer ratt</button><button type="button" id="pedals">Kalibrer pedaler</button></div>
         <p id="calibration" role="status"></p>

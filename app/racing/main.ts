@@ -11,8 +11,10 @@ import { createDrivingParticles } from "./particles";
 import { createChaseCamera } from "./camera";
 import { createLocalMultiplayer } from "./localMultiplayer";
 import { createControls } from "./controls";
-import { createVehicle, stepTime } from "./vehicle";
+import { createVehicle, sprintHandling, sprintTopSpeed, stepTime } from "./vehicle";
 import { createWorld, spawn } from "./world";
+import { createSprintCourse } from "./sprintCourse";
+import { createSprint } from "./sprint";
 import "./racing.css";
 
 async function start() {
@@ -46,11 +48,42 @@ async function start() {
 
   const physics = new RAPIER.World({ x: 0, y: -16, z: 0 });
   physics.timestep = stepTime;
-  const playground = createWorld(scene, physics, shadows);
-  const keyboardTab = new URLSearchParams(location.search).get("input") === "keyboard";
-  const startingLane = keyboardTab ? { ...spawn, x: -3.35 } : spawn;
-  const car = createVehicle(scene, physics, shadows, startingLane, playground.padAt);
-  const controls = createControls(car.reset);
+  const params = new URLSearchParams(location.search);
+  const racing = params.get("mode") === "sprint";
+  const ridge = params.get("track") === "ridge";
+  const course = racing ? createSprintCourse(scene, physics, ridge) : undefined;
+  const playground = racing ? undefined : createWorld(scene, physics, shadows);
+  const startingLane = course?.spawn ?? (params.get("input") === "keyboard" ? { ...spawn, x: -3.35 } : spawn);
+  const car = createVehicle(scene, physics, shadows, startingLane, playground?.padAt ?? (() => -1),
+    racing ? sprintHandling : undefined);
+  const sprint = course && createSprint(scene, course, car);
+  const controls = createControls(sprint?.reset ?? car.reset, racing);
+  if (racing) {
+    document.body.dataset.mode = "sprint";
+    document.title = "Tidkjøring · Kjøreparken";
+    document.querySelector("h1")!.textContent = "Tidkjøring";
+    document.querySelector("canvas")!.setAttribute("aria-label", "Tidkjøring");
+    document.querySelector<HTMLElement>("#sprint-hud")!.hidden = false;
+    document.querySelector<HTMLButtonElement>("#sprint-retry")!.hidden = false;
+    document.querySelector<HTMLButtonElement>("#sprint-retry")!.onclick = sprint!.reset;
+    document.querySelector<HTMLAnchorElement>("#sprint-mode")!.hidden = true;
+    const parkLink = document.querySelector<HTMLAnchorElement>("#park-mode")!;
+    for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-track]")) {
+      const trackParams = new URLSearchParams(params);
+      if (link.dataset.track === "ridge") trackParams.set("track", "ridge");
+      else trackParams.delete("track");
+      link.href = `?${trackParams}`;
+      if ((link.dataset.track === "ridge") === ridge) link.setAttribute("aria-current", "page");
+    }
+    params.delete("mode");
+    params.delete("track");
+    parkLink.href = params.size ? `?${params}` : "./racing.html";
+    parkLink.hidden = false;
+  } else if (params.get("input") === "keyboard") {
+    document.querySelector<HTMLAnchorElement>("#sprint-mode")!.href = "?mode=sprint&input=keyboard";
+  }
+  const raceSettings = { ...controls.settings, speed: sprintTopSpeed, automatic: false, gentle: false, reverse: false, recovery: false };
+  const offRoadSettings = { ...raceSettings, speed: 10 };
   const audio = createRacingAudio();
   audio.update(controls.settings.sound, true, 0, true, 0);
   const particles = createDrivingParticles(scene);
@@ -64,7 +97,7 @@ async function start() {
   const chase = createChaseCamera(scene, physics, car, startingLane);
   let accumulator = 0;
   chase.update(0);
-  const localPlayers = createLocalMultiplayer(scene, () => {
+  const localPlayers = !racing ? createLocalMultiplayer(scene, () => {
     const point = car.root.position;
     const rotation = car.root.rotationQuaternion!;
     return {
@@ -75,9 +108,9 @@ async function start() {
       steering: car.steering(),
       reset: car.revision(),
     };
-  }, document.querySelector("#local-players")!);
-  window.addEventListener("pagehide", () => localPlayers.disconnect());
-  window.addEventListener("pageshow", () => localPlayers.reconnect());
+  }, document.querySelector("#local-players")!) : undefined;
+  window.addEventListener("pagehide", () => localPlayers?.disconnect());
+  window.addEventListener("pageshow", () => localPlayers?.reconnect());
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) audio.update(controls.settings.sound, false, 0, true, 0);
   });
@@ -95,14 +128,19 @@ async function start() {
     } else {
       accumulator += dt;
       while (accumulator >= stepTime) {
-        car.step(input, controls.settings);
-        physics.step(contacts);
-        scored = playground.checkGoals(stepTime, car.root.position) || scored;
-        const feedback = playground.stepStuntToys(stepTime, car.position());
-        collected ||= feedback.collected;
-        knocked ||= feedback.knocked;
-        contacts.drainContactForceEvents(collectImpact);
-        impact = Math.max(impact, car.takeLanding());
+        if (!sprint || sprint.beforeStep()) {
+          car.step(input, course ? (course.isGrass(car.position()) ? offRoadSettings : raceSettings) : controls.settings);
+          physics.step(contacts);
+          sprint?.afterStep();
+          if (playground) {
+            scored = playground.checkGoals(stepTime, car.root.position) || scored;
+            const feedback = playground.stepStuntToys(stepTime, car.position());
+            collected ||= feedback.collected;
+            knocked ||= feedback.knocked;
+          }
+          contacts.drainContactForceEvents(collectImpact);
+          impact = Math.max(impact, car.takeLanding());
+        }
         accumulator -= stepTime;
       }
       const renderScale = engine.getHardwareScalingLevel();
@@ -117,21 +155,22 @@ async function start() {
       }
     }
     car.setLook(controls.settings.car);
-    car.sync(active ? accumulator / stepTime : 1, dt);
+    car.sync(active && (!sprint || sprint.driving()) ? accumulator / stepTime : 1, dt);
     const speed = car.speed();
     const grounded = car.grounded();
     const boost = car.boost();
-    playground.sync(car.root.position, boost, active ? dt : 0);
-    audio.update(controls.settings.sound, active, speed, grounded, boost);
-    if (active) {
+    playground?.sync(car.root.position, boost, active ? dt : 0);
+    audio.update(controls.settings.sound, active, sprint && !sprint.driving() ? 0 : speed, grounded, boost);
+    sprint?.draw(active ? accumulator / stepTime : 1);
+    if (active && (!sprint || sprint.driving())) {
       audio.impact(impact);
       if (scored) audio.goalChime();
       if (collected) audio.starChime();
       if (knocked) audio.bowlingChime();
       particles.update(dt, car.root.position, car.root.rotationQuaternion!, speed, grounded, boost, impact,
-        playground.isGrass(car.root.position));
+        (course ?? playground)!.isGrass(car.root.position));
     }
-    localPlayers.update(dt);
+    localPlayers?.update(dt);
     chase.update(dt);
     sun.position.set(car.root.position.x + 18, 42, car.root.position.z - 16);
     scene.render();

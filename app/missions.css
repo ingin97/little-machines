@@ -102,3 +102,7 @@
   .constructionTools button { min-width: 62px; }
   .constructionTools button strong { font-size: 9px; }
 }
+
+.drivingModes { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; }
+.drivingModes a { padding: .6em 1em; border-radius: 12px; background: #fff8df; color: #19332b; font-weight: 800; }
+.drivingModes a:focus-visible { outline: 3px solid #d8e979; outline-offset: 3px; }

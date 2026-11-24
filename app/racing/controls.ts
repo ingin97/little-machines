@@ -33,7 +33,7 @@ function loadSettings(): DrivingSettings {
   }
 }
 
-export function createControls(reset: () => void) {
+export function createControls(reset: () => void, sprint = false) {
   const settings = loadSettings();
   const dialog = document.querySelector<HTMLDialogElement>("#parent")!;
   const status = document.querySelector("#status")!;
@@ -48,6 +48,7 @@ export function createControls(reset: () => void) {
   let pad: Gamepad | undefined;
   let activeDevice: string | undefined;
   let lastStatus = "";
+  let retryHeld = false;
   let capture: { id: string; rest: number[]; accelerator?: PedalAxis } | undefined;
 
   function save() {
@@ -189,6 +190,9 @@ export function createControls(reset: () => void) {
     const device = pad && `${pad.index}:${pad.id}`;
     if (activeDevice && device !== activeDevice) cancelCalibration();
     activeDevice = device;
+    const retry = sprint && !keyboardOnly.checked && Boolean(pad?.buttons[9]?.pressed);
+    if (retry && !retryHeld && !dialog.open && !document.hidden) reset();
+    retryHeld = retry;
 
     const touchKeys = [...touch.values()];
     const pressed = (key: string) => keys.has(key) || touchKeys.includes(key);
@@ -224,7 +228,7 @@ export function createControls(reset: () => void) {
       ? pad ? "Sentrer rattet og slipp pedalene · eller bruk piltastene" : "Ratt frakoblet · bruk piltastene eller koble til igjen"
       : pad && usePad ? (pad.mapping === "standard" ? "Håndkontroll tilkoblet" : "Ratt tilkoblet") : "Piltaster · WASD · R";
     if (label !== lastStatus) {
-      status.textContent = label;
+      status.textContent = sprint && usePad && pad ? `${label} · Start for nytt forsøk` : label;
       lastStatus = label;
     }
     return {

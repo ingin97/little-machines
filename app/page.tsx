@@ -145,6 +145,10 @@ export default function Home() {
             <span className="vehiclePicture" aria-hidden="true">🏗️</span><strong>Byggeplass</strong><small>Grav, last og kjør dumper</small>
           </button>
         </div>
+        <nav className="drivingModes" aria-label="Bilkjøring">
+          <a href="./racing.html">Kjøreparken</a>
+          <a href="./racing.html?mode=sprint">Tidkjøring</a>
+        </nav>
         <p className="menuHelp">Bruk ratt, piltaster eller knappene på skjermen for å styre</p>
       </div>
     </div>}
