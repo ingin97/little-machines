@@ -4,28 +4,28 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { paint } from "./surfaces.ts";
 
-export const goal = { x: 30, z: -13, halfWidth: 6.5, height: 5.5 };
+export const goal = { x: 30, y: 0, z: -13, halfWidth: 6.5, height: 5.5 };
 
-export function crossedGoal(previous: { x: number; y: number; z: number }, ball: { x: number; y: number; z: number }, radius: number) {
-  const line = goal.z + radius;
+export function crossedGoal(previous: { x: number; y: number; z: number }, ball: { x: number; y: number; z: number }, radius: number, target = goal) {
+  const line = target.z + radius;
   if (previous.z >= line || ball.z < line) return false;
   const amount = (line - previous.z) / (ball.z - previous.z);
   const x = previous.x + (ball.x - previous.x) * amount;
-  const y = previous.y + (ball.y - previous.y) * amount;
-  return Math.abs(x - goal.x) + radius <= goal.halfWidth && y > 0 && y + radius <= goal.height;
+  const y = previous.y + (ball.y - previous.y) * amount - target.y;
+  return Math.abs(x - target.x) + radius <= target.halfWidth && y > 0 && y + radius <= target.height;
 }
 
-export function addFootballGoal(scene: Scene, pieces: Mesh[]) {
+export function addFootballGoal(scene: Scene, pieces: Mesh[], target = goal) {
   const white = paint(scene, "#fff5d8");
   const pink = paint(scene, "#ee6389");
   const grass = paint(scene, "#8bcc75");
   function box(name: string, w: number, h: number, d: number, x: number, y: number, z: number, material: typeof white) {
     const mesh = CreateBox(name, { width: w, height: h, depth: d }, scene);
-    mesh.position.set(x, y, z);
+    mesh.position.set(x, target.y + y, z);
     mesh.material = material;
     pieces.push(mesh);
   }
-  const { x, z, halfWidth, height } = goal;
+  const { x, z, halfWidth, height } = target;
   box("football pitch", 20, .025, 26, x, .012, z - 10, grass);
   box("football goal line", halfWidth * 2, .04, .18, x, .035, z, white);
   box("football crossbar", halfWidth * 2 + .55, .38, .38, x, height + .16, z, white);
@@ -58,9 +58,9 @@ export function addFootballGoal(scene: Scene, pieces: Mesh[]) {
         const angle = i * 2.39996;
         const speed = 2.2 + i % 6 * .64;
         mesh.position.set(x + Math.cos(angle) * speed * elapsed,
-          3.1 + (4.4 + i % 5 * .8) * elapsed - 5 * elapsed ** 2, z + Math.sin(angle) * speed * elapsed);
+          target.y + 3.1 + (4.4 + i % 5 * .8) * elapsed - 5 * elapsed ** 2, z + Math.sin(angle) * speed * elapsed);
         mesh.rotation.set(elapsed * (3 + i % 3), angle, elapsed * 4 + i);
-        if (elapsed >= 1.8 || mesh.position.y < 0) mesh.setEnabled(false);
+        if (elapsed >= 1.8 || mesh.position.y < target.y) mesh.setEnabled(false);
       }
     },
   };

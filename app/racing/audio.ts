@@ -1,5 +1,7 @@
 import { clamp } from "../driveInput";
 
+import { drivingSurfaces, type DrivingSurface } from "./drivingSurfaces.ts";
+
 export function createRacingAudio() {
   let mix: ReturnType<typeof buildMix> | undefined;
   let lastImpact = -1;
@@ -16,7 +18,7 @@ export function createRacingAudio() {
   window.addEventListener("pointerdown", unlock);
   window.addEventListener("keydown", unlock);
 
-  function update(sound: boolean, active: boolean, speed: number, grounded: boolean, boost: number) {
+  function update(sound: boolean, active: boolean, speed: number, grounded: boolean, boost: number, surface: DrivingSurface = "asphalt", skid = 0) {
     enabled = sound;
     if (!mix || mix.context.state !== "running") return;
     const now = mix.context.currentTime;
@@ -26,6 +28,9 @@ export function createRacingAudio() {
     mix.engineGain.gain.setTargetAtTime(.025 + pace * .035 + boost * .012, now, .1);
     mix.windGain.gain.setTargetAtTime(.018 + pace * .040 + (grounded ? 0 : pace * .030), now, .12);
     mix.windFilter.frequency.setTargetAtTime(205 + pace * 420, now, .15);
+    const { rollHz, skidHz } = drivingSurfaces[surface];
+    mix.tireFilter.frequency.setTargetAtTime(rollHz + (skidHz - rollHz) * skid, now, .09);
+    mix.tireGain.gain.setTargetAtTime(grounded ? pace * .027 + skid * .035 : 0, now, .08);
   }
 
   function impact(strength: number) {
@@ -96,6 +101,11 @@ function buildMix() {
   const windGain = context.createGain();
   windGain.gain.value = 0;
   wind.connect(windFilter).connect(windGain).connect(output);
+  const tireFilter = context.createBiquadFilter();
+  tireFilter.type = "bandpass";
+  const tireGain = context.createGain();
+  tireGain.gain.value = 0;
+  wind.connect(tireFilter).connect(tireGain).connect(output);
   wind.start();
-  return { context, output, engine, engineGain, windFilter, windGain, noise };
+  return { context, output, engine, engineGain, windFilter, windGain, tireFilter, tireGain, noise };
 }

@@ -11,6 +11,7 @@
     <header class="hud">
       <h1>Kjøreparken</h1>
       <nav class="mode-actions" aria-label="Spillmodus">
+        <button id="choose-world" type="button" aria-haspopup="dialog" title="Velg verden" hidden>Verden</button>
         <a id="sprint-mode" href="?mode=sprint">Tidkjøring</a>
         <a id="park-mode" href="./racing.html" hidden>Kjøreparken</a>
         <button id="sprint-retry" type="button" title="R eller Start på håndkontroll" hidden>Prøv igjen <kbd>R</kbd></button>
@@ -38,6 +39,25 @@
       <button data-key="arrowdown" aria-label="Brems">▼</button>
       <button data-key="arrowup" aria-label="Gass">▲</button>
     </div>
+    <dialog id="world-picker" aria-labelledby="world-title">
+      <form>
+        <header><h2 id="world-title">Velg verden</h2><button id="world-close" type="button">Lukk</button></header>
+        <label>Verden <select id="world-name" autofocus></select></label>
+        <label>Frø <input id="world-seed" type="text" maxlength="64" spellcheck="false"></label>
+        <div class="presets">
+          <button type="submit">Kjør</button>
+          <button id="world-random" type="button">Tilfeldig verden</button>
+          <button id="world-copy-seed" type="button">Kopier frø</button>
+        </div>
+        <label>Delbar lenke <input id="world-link" type="url" readonly></label>
+        <div class="presets">
+          <button id="world-copy-link" type="button">Kopier lenke</button>
+          <button id="world-favorite" type="button">Lagre favoritt</button>
+        </div>
+        <label>Favoritter <select id="world-favorites"></select></label>
+        <p id="world-message" role="status"></p>
+      </form>
+    </dialog>
     <dialog id="parent">
       <form method="dialog">
         <header><h2>Foreldreinnstillinger</h2><button value="close" autofocus>Lukk</button></header>

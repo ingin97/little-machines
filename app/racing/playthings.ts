@@ -7,10 +7,14 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import RAPIER from "@dimforge/rapier3d-compat";
-import { crossedGoal, serveAreaClear } from "./goal.ts";
+import { crossedGoal, goal, serveAreaClear } from "./goal.ts";
 import { paint } from "./surfaces.ts";
 
-export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator) {
+export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, layout = {
+  target: goal,
+  balls: [{ x: 30, y: 0, z: -29 }, { x: 43, y: 0, z: -34 }, { x: -31, y: 0, z: 32 }],
+  stacks: [[36, 34], [-38, 38], [100, 13]],
+}) {
   const cream = paint(scene, "#fff9df");
   const dark = paint(scene, "#38405d");
   const colors = ["#fc7355", "#f6c759", "#5ec6be", "#818be1"].map((color) => paint(scene, color));
@@ -32,7 +36,7 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
   for (const a of [-1, 1]) for (const b of [-golden, golden]) {
     directions.push(new Vector3(0, a, b), new Vector3(b, 0, a), new Vector3(a, b, 0));
   }
-  for (const [x, z] of [[30, -29], [43, -34], [-31, 32]]) {
+  for (const { x, y, z } of layout.balls) {
     const ball = CreateIcoSphere("football", { radius, subdivisions: 3, flat: true }, scene);
     ball.material = cream;
     shadows.addShadowCaster(ball);
@@ -64,12 +68,12 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
     data.applyToMesh(panels);
     panels.parent = ball;
     panels.material = dark;
-    const home = new Vector3(x, radius + .06, z);
+    const home = new Vector3(x, y + radius + .06, z);
     const body = add(ball, home, RAPIER.ColliderDesc.ball(radius).setMass(26).setFriction(.54).setRestitution(.55));
     footballs.push({ body, home, previous: home.clone(), scoredFor: -1 });
   }
 
-  for (const [x, z] of [[36, 34], [-38, 38], [100, 13]]) {
+  for (const [x, z] of layout.stacks) {
     const size = 1.55;
     for (let row = 0; row < 3; row++) {
       for (let column = 0; column < 3 - row; column++) {
@@ -106,7 +110,7 @@ export function createPlaythings(scene: Scene, physics: RAPIER.World, shadows: S
           ball.scoredFor = -1;
           continue;
         }
-      } else if (crossedGoal(previous, point, radius)) {
+      } else if (crossedGoal(previous, point, radius, layout.target)) {
         ball.scoredFor = 0;
         const velocity = body.linvel();
         body.setLinvel({ x: velocity.x * .24, y: velocity.y, z: velocity.z * .20 }, true);

@@ -4,8 +4,13 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import RAPIER from "@dimforge/rapier3d-compat";
+import { setColliderSurface, type DrivingSurface } from "./drivingSurfaces.ts";
+import type { RoadVector } from "./roadSpline.ts";
 
-export type SurfaceRow = { x: number; y: number; z: number; heading: number; halfWidth: number; bank?: number; crown?: number };
+export type SurfaceRow = {
+  x: number; y: number; z: number; heading: number; halfWidth: number;
+  bank?: number; crown?: number; frameRight?: RoadVector; frameUp?: RoadVector;
+};
 
 export function straightRows(x: number, z: number, heading: number, halfWidth: number, profile: readonly (readonly [number, number])[]): SurfaceRow[] {
   return profile.map(([distance, y]) => ({
@@ -58,20 +63,22 @@ export function shoulderRows(rows: SurfaceRow[], side: -1 | 1, width: number, gr
 
 export function surface(
   scene: Scene, name: string, material: StandardMaterial, rows: SurfaceRow[],
-  bands: readonly number[], physics?: RAPIER.World,
+  bands: readonly number[], physics?: RAPIER.World, drivingSurface?: DrivingSurface,
 ) {
   const positions: number[] = [];
   const indices: number[] = [];
   const uvs: number[] = [];
   for (const [rowIndex, row] of rows.entries()) {
-    const rightX = Math.cos(row.heading);
-    const rightZ = -Math.sin(row.heading);
+    const right = row.frameRight ?? { x: Math.cos(row.heading), y: 0, z: -Math.sin(row.heading) };
+    const up = row.frameUp ?? { x: 0, y: 1, z: 0 };
     for (const band of bands) {
       uvs.push((band + 1) / 2, rowIndex / (rows.length - 1));
+      const width = row.halfWidth * band;
+      const crown = (row.crown ?? 0) * band ** 2;
       positions.push(
-        row.x + rightX * row.halfWidth * band,
-        row.y + (row.bank ?? 0) * band + (row.crown ?? 0) * band ** 2,
-        row.z + rightZ * row.halfWidth * band,
+        row.x + right.x * width + up.x * crown,
+        row.y + (row.frameRight ? right.y * width : (row.bank ?? 0) * band) + up.y * crown,
+        row.z + right.z * width + up.z * crown,
       );
     }
     if (!rowIndex) continue;
@@ -92,8 +99,9 @@ export function surface(
   mesh.material = material;
   mesh.receiveShadows = true;
   if (physics) {
-    physics.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES_TWO_SIDED)
+    const collider = physics.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES_TWO_SIDED)
       .setFriction(.85));
+    if (drivingSurface) setColliderSurface(physics, collider, drivingSurface);
   }
   return mesh;
 }

@@ -5,6 +5,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { clamp } from "../driveInput.ts";
 import type { DriveInput, DrivingSettings } from "./controls.ts";
 import { axleHeight, createCarVisual, restLength, wheelMounts, wheelRadius } from "./carVisual.ts";
+import { contactSurface, drivingSurfaces, type DrivingSurface } from "./drivingSurfaces.ts";
 import { boundary, type Spawn } from "./world.ts";
 
 const localUp = new Vector3(0, 1, 0);
@@ -18,7 +19,7 @@ export const sprintTopSpeed = 38;
 const playgroundHandling = { engineForce: 2200, brakeForce: 30, grip: 2.2, sideGrip: 1.15, highSpeedSteerRate: 10, powerTaper: 3, crestLift: 0, keepLandingSpeed: false, smoothLandingSteer: false, manualReverseSpeed: 0 };
 export const sprintHandling = { engineForce: 2350, brakeForce: 9, grip: 2.7, sideGrip: 1.35, highSpeedSteerRate: 4.8, powerTaper: 7, crestLift: 2.1, keepLandingSpeed: true, smoothLandingSteer: true, manualReverseSpeed: 6 };
 
-export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, spawn: Spawn, padAt: (position: RAPIER.Vector) => number, handling = playgroundHandling) {
+export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, spawn: Spawn, padAt: (position: RAPIER.Vector) => number, handling = playgroundHandling, worldHalfExtent?: number) {
   const body = physics.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
     .setLinearDamping(.14).setAngularDamping(1.4).setCcdEnabled(true));
   const contactEvents = RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS;
@@ -42,6 +43,14 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     controller.setWheelSideFrictionStiffness(i, handling.sideGrip);
   }
 
+  const wheelSurfaces = wheelMounts.map((): DrivingSurface | null => null);
+  const wheelHandling = wheelMounts.map(() => ({ ...drivingSurfaces.asphalt }));
+  const contactVector = { x: 0, y: 0, z: 0 };
+  const adhesionImpulse = { x: 0, y: 0, z: 0 };
+  const handlingBlend = 1 - Math.exp(-16 * stepTime);
+  const handlingKeys = ["traction", "lateral", "rolling", "braking", "acceleration", "adhesion"] as const;
+  let drivingSurface: DrivingSurface = "asphalt";
+  let skid = 0;
   let steering = 0;
   let stuck = 0;
   let overturned = 0;
@@ -96,6 +105,10 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     currentSpeed = previousSpeed = groundedWheels = airborneTime = landing = launchCooldown = pitch = roll = 0;
     braking = false;
     steeringGrip = 1;
+    wheelSurfaces.fill(null);
+    for (const wheel of wheelHandling) Object.assign(wheel, drivingSurfaces.asphalt);
+    drivingSurface = "asphalt";
+    skid = 0;
     lastPosition.set(at.x, at.y, at.z);
     lastRotation.copyFrom(Quaternion.RotationAxis(localUp, at.heading));
     revision++;
@@ -134,7 +147,9 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     const grounded = contacts > 0;
     cooldown = Math.max(0, cooldown - stepTime);
     overturned = up.y < .41 && planarSpeed < 3 ? overturned + stepTime : 0;
-    if (point.y < -12 || Math.hypot(point.x, point.z) > boundary) {
+    const fromCenter = worldHalfExtent === undefined ? Math.hypot(point.x, point.z) : Math.max(Math.abs(point.x), Math.abs(point.z));
+    const edge = worldHalfExtent ?? boundary;
+    if (point.y < -12 || fromCenter > edge) {
       if (settings.recovery) recover(Math.atan2(-point.x, -point.z));
       else reset();
       return;
@@ -145,7 +160,7 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     }
 
     const stable = contacts >= 3 && up.y > .95 && Math.abs(velocity.y) < .85 && speed > 1.05
-      && Math.hypot(point.x, point.z) < boundary - 12;
+      && fromCenter < edge - 12;
     groundedTime = stable ? groundedTime + stepTime : 0;
     if (reverseAttempts && Math.hypot(point.x - obstruction.x, point.z - obstruction.z) > 9) reverseAttempts = 0;
     if (groundedTime > 1.1 && !reverseAttempts) {
@@ -214,11 +229,20 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     const speedBraking = clamp((planarSpeed - settings.speed + .25) * 7, 0, Math.min(22, handling.brakeForce));
     for (let i = 0; i < wheels.length; i++) {
       controller.setWheelSteering(i, i < 2 ? steering * steeringGrip : 0);
-      if (handling.smoothLandingSteer) {
-        controller.setWheelSideFrictionStiffness(i, handling.sideGrip * (.5 + .5 * steeringGrip));
+      const wheel = wheelHandling[i];
+      const target = drivingSurfaces[wheelSurfaces[i] ?? "asphalt"];
+      const moderation = settings.gentle ? .34 : 1;
+      for (const key of handlingKeys) {
+        const baseline = drivingSurfaces.asphalt[key];
+        wheel[key] += (baseline + (target[key] - baseline) * moderation - wheel[key]) * handlingBlend;
       }
-      controller.setWheelEngineForce(i, drive / wheels.length);
-      controller.setWheelBrake(i, Math.max(brake * handling.brakeForce, speedBraking, .15));
+      const landingGrip = handling.smoothLandingSteer ? .5 + .5 * steeringGrip : 1;
+      controller.setWheelFrictionSlip(i, handling.grip * wheel.traction);
+      controller.setWheelSideFrictionStiffness(i, handling.sideGrip * wheel.lateral * landingGrip);
+      controller.setWheelEngineForce(i, drive * wheel.acceleration / wheels.length);
+      const motion = clamp(planarSpeed / 2, 0, 1);
+      const rolling = .15 + (wheel.rolling - .15) * motion;
+      controller.setWheelBrake(i, Math.max(brake * handling.brakeForce * wheel.braking, speedBraking, rolling));
     }
     const frontOnRoad = controller.wheelIsInContact(0) || controller.wheelIsInContact(1);
     if (!grounded && up.y > -.6) {
@@ -231,6 +255,32 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
       }, true);
     }
     controller.updateVehicle(stepTime, undefined, undefined, (collider) => collider.parent()?.handle !== body.handle);
+    adhesionImpulse.x = adhesionImpulse.y = adhesionImpulse.z = 0;
+    let surfaceContacts = 0;
+    for (let i = 0; i < wheels.length; i++) {
+      if (!controller.wheelIsInContact(i)) {
+        wheelSurfaces[i] = null;
+        continue;
+      }
+      const surface = contactSurface(physics, controller.wheelGroundObject(i), controller.wheelContactPoint(i, contactVector));
+      wheelSurfaces[i] = surface;
+      let count = 0;
+      for (let j = 0; j <= i; j++) count += Number(wheelSurfaces[j] === surface);
+      if (count > surfaceContacts) {
+        drivingSurface = surface;
+        surfaceContacts = count;
+      }
+      const normal = controller.wheelContactNormal(i, contactVector);
+      if (normal && surface === "magnetic") {
+        const impulse = wheelHandling[i].adhesion * body.mass() * stepTime / wheels.length;
+        adhesionImpulse.x -= normal.x * impulse;
+        adhesionImpulse.y -= normal.y * impulse;
+        adhesionImpulse.z -= normal.z * impulse;
+      }
+    }
+    if (adhesionImpulse.x || adhesionImpulse.y || adhesionImpulse.z) body.applyImpulse(adhesionImpulse, true);
+    const sideSpeed = Math.abs(velocity.x * forward.z - velocity.z * forward.x);
+    skid = surfaceContacts ? clamp(sideSpeed / 7 + brake * planarSpeed / 25, 0, 1) : 0;
     launchCooldown = Math.max(0, launchCooldown - stepTime);
     // At a fast crest, lift the chassis as the front tires clear the road so the tail follows them.
     if (handling.crestLift && !launchCooldown && frontOnRoad
@@ -267,6 +317,7 @@ export function createVehicle(scene: Scene, physics: RAPIER.World, shadows: Shad
     root, reset, sync, step, setLook,
     position: () => body.translation(), rotation: () => body.rotation(), revision: () => revision, boost: () => Math.min(1, boostTime * 2),
     steering: () => steering * steeringGrip, wheelRotation: () => controller.wheelRotation(0) ?? 0, wheelSpeed: () => previousSpeed,
+    surface: () => drivingSurface, wheelSurfaces: () => [...wheelSurfaces], skid: () => skid,
     speed: () => currentSpeed, grounded: () => groundedWheels > 0,
     ownsCollider: (handle: number) => handle === chassis.handle || handle === cabin.handle,
     takeLanding: () => { const strength = landing; landing = 0; return strength; },

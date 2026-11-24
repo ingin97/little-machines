@@ -9,17 +9,21 @@ import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGener
 import RAPIER from "@dimforge/rapier3d-compat";
 import { paint } from "./surfaces.ts";
 
-export function createStuntToys(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator) {
+export function createStuntToys(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, layout = {
+  bowling: { x: -108, y: 0, z: 10 },
+  stars: [[-12, 1.35, -17], [-92, 1.38, 26], [-149, 12.35, 49], [-116, 1.35, -36],
+    [-188, 6.1, 3], [-125, 1.4, -90], [221, 10.8, 2]].map(([x, y, z]) => ({ x, y, z })),
+}) {
   const ivory = paint(scene, "#fff1d9");
   const coral = paint(scene, "#ed674c");
   const gold = paint(scene, "#ffd040");
   const lavender = paint(scene, "#b1a1ff");
   gold.emissiveColor.set(.34, .22, .035);
   lavender.emissiveColor.set(.20, .15, .37);
-  const bowlingCenter = new Vector3(-108, 0, 10);
+  const bowlingCenter = layout.bowling;
   const pins: { home: Vector3; body: RAPIER.RigidBody; mesh: Mesh; knocked: boolean }[] = [];
   for (let row = 0; row < 3; row++) for (let pin = 0; pin <= row; pin++) {
-    const home = new Vector3(bowlingCenter.x - row * 1.55, .02, bowlingCenter.z + (pin - row / 2) * 1.5);
+    const home = new Vector3(bowlingCenter.x - row * 1.55, bowlingCenter.y + .02, bowlingCenter.z + (pin - row / 2) * 1.5);
     const mesh = CreateCylinder("bowling pin", { diameterBottom: .72, diameterTop: .56, height: 1.05, tessellation: 12 }, scene);
     mesh.material = ivory;
     shadows.addShadowCaster(mesh);
@@ -60,8 +64,7 @@ export function createStuntToys(scene: Scene, physics: RAPIER.World, shadows: Sh
   data.applyToMesh(starMesh);
   starMesh.material = gold;
   starMesh.isVisible = false;
-  const stars = [[-12, 1.35, -17], [-92, 1.38, 26], [-149, 12.35, 49], [-116, 1.35, -36],
-    [-188, 6.1, 3], [-125, 1.4, -90], [221, 10.8, 2]].map(([x, y, z], i) => {
+  const stars = layout.stars.map(({ x, y, z }, i) => {
     const home = new Vector3(x, y, z);
     const mesh = starMesh.createInstance("collectible star");
     mesh.position.copyFrom(home);

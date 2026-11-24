@@ -33,7 +33,7 @@ function loadSettings(): DrivingSettings {
   }
 }
 
-export function createControls(reset: () => void, sprint = false) {
+export function createControls(reset: () => void, sprint = false, worldDialog?: HTMLDialogElement) {
   const settings = loadSettings();
   const dialog = document.querySelector<HTMLDialogElement>("#parent")!;
   const status = document.querySelector("#status")!;
@@ -63,7 +63,7 @@ export function createControls(reset: () => void, sprint = false) {
   window.addEventListener("blur", clearInput);
   document.addEventListener("visibilitychange", clearInput);
   window.addEventListener("keydown", (event) => {
-    if (dialog.open || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (dialog.open || worldDialog?.open || event.altKey || event.ctrlKey || event.metaKey) return;
     const key = event.key.toLowerCase();
     if (key === "r" && !event.repeat) reset();
     if (!keyGroups.includes(key)) return;
@@ -239,5 +239,5 @@ export function createControls(reset: () => void, sprint = false) {
     };
   }
 
-  return { settings, read, paused: () => dialog.open || document.hidden };
+  return { settings, read, paused: () => dialog.open || Boolean(worldDialog?.open) || document.hidden };
 }

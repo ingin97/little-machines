@@ -160,12 +160,12 @@ test("changing cars preserves the physics pose and landing feedback only fires o
 test("driving particles reuse their pool and expire", (t) => {
   const { car, scene } = playground(t);
   const effects = createDrivingParticles(scene);
-  const pool = scene.meshes.filter((mesh) => mesh.name === "driving particle");
   const update = (speed, boost, impact) => effects.update(stepTime, car.root.position, car.root.rotationQuaternion,
-    speed, true, boost, impact, true);
+    speed, true, boost, impact, "grass");
 
-  assert.equal(pool.length, 46);
   update(12, 1, .9);
+  const pool = scene.meshes.filter((mesh) => mesh.name === "driving particle");
+  assert.equal(pool.length, 36);
   assert.ok(pool.some((mesh) => mesh.isEnabled() && mesh.isVisible));
   for (let i = 0; i < 60; i++) update(0, 0, 0);
   assert.ok(pool.every((mesh) => !mesh.isEnabled()));

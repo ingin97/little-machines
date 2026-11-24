@@ -72,3 +72,19 @@ test("the scene shows a marked remote car and cleans it up on leave", async (t) 
   assert.equal(scene.getMeshByName("local player marker"), null);
   assert.equal(scene.getTransformNodeByName("car"), null);
 });
+
+test("local peers in differently generated worlds do not exchange poses", async () => {
+  const room = `world-check-${crypto.randomUUID()}`;
+  const first = connectLocalCars(() => pose, room, { id: "alpine@1:42", hash: "content-a" });
+  const mismatch = connectLocalCars(() => pose, room, { id: "alpine@1:42", hash: "content-b" });
+  const match = connectLocalCars(() => pose, room, { id: "alpine@1:42", hash: "content-a" });
+  assert.ok(first && mismatch && match);
+  try {
+    await received(() => first.peers().size === 1 && match.peers().size === 1);
+    assert.equal(mismatch.peers().size, 0);
+  } finally {
+    first.close();
+    mismatch.close();
+    match.close();
+  }
+});

@@ -3,25 +3,35 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { drivingSurfaces, type DrivingSurface } from "./drivingSurfaces.ts";
 import { paint } from "./surfaces.ts";
 
 export function createDrivingParticles(scene: Scene) {
-  const dustMesh = CreateIcoSphere("dust source", { radius: 1, subdivisions: 1 }, scene);
-  dustMesh.material = paint(scene, "#e6cc98");
   const boostMesh = CreateBox("boost source", { size: 1 }, scene);
   const glow = paint(scene, "#65ffff");
   glow.emissiveColor.copyFromFloats(.20, .64, .68);
   boostMesh.material = glow;
-  dustMesh.isVisible = boostMesh.isVisible = false;
+  boostMesh.isVisible = false;
 
-  function pool(source: typeof dustMesh, capacity: number) {
+  function pool(source: typeof boostMesh, capacity: number) {
     return Array.from({ length: capacity }, () => {
       const mesh = source.createInstance("driving particle");
       mesh.setEnabled(false);
       return { mesh, velocity: new Vector3(), life: 0, lifetime: 0, size: 0 };
     });
   }
-  const dust = pool(dustMesh, 28);
+  const dustPools = new Map<DrivingSurface, ReturnType<typeof pool>>();
+  function dustFor(surface: DrivingSurface) {
+    let particles = dustPools.get(surface);
+    if (!particles) {
+      const source = CreateIcoSphere("dust source", { radius: 1, subdivisions: 1 }, scene);
+      source.material = paint(scene, drivingSurfaces[surface].particles);
+      source.isVisible = false;
+      particles = pool(source, 18);
+      dustPools.set(surface, particles);
+    }
+    return particles;
+  }
   const sparks = pool(boostMesh, 18);
   const offset = new Vector3();
   const worldOffset = new Vector3();
@@ -30,7 +40,7 @@ export function createDrivingParticles(scene: Scene) {
   let nextImpact = 0;
   let side = 1;
 
-  function emit(particles: typeof dust, point: Vector3, rotation: Quaternion, spark: boolean) {
+  function emit(particles: ReturnType<typeof pool>, point: Vector3, rotation: Quaternion, spark: boolean) {
     const puff = particles.find((particle) => particle.life <= 0);
     if (!puff) return;
     side *= -1;
@@ -46,24 +56,24 @@ export function createDrivingParticles(scene: Scene) {
     puff.mesh.setEnabled(true);
   }
 
-  function update(dt: number, point: Vector3, rotation: Quaternion, speed: number, grounded: boolean, boost: number, impact: number, onGrass: boolean) {
+  function update(dt: number, point: Vector3, rotation: Quaternion, speed: number, grounded: boolean, boost: number, impact: number, surface: DrivingSurface, skid = 0) {
     nextDust -= dt;
     nextSpark -= dt;
     nextImpact -= dt;
     if (grounded && speed > 4 && nextDust <= 0) {
-      emit(dust, point, rotation, false);
-      nextDust = onGrass ? .05 + 1 / speed * .22 : .18;
+      emit(dustFor(surface), point, rotation, false);
+      nextDust = drivingSurfaces[surface].interval / (1 + skid * 2);
     }
     if (boost > 0 && nextSpark <= 0) {
       emit(sparks, point, rotation, true);
       nextSpark = .043;
     }
     if (impact > 0 && nextImpact <= 0) {
-      for (let i = 0; i < Math.ceil(impact * 8); i++) emit(dust, point, rotation, false);
+      for (let i = 0; i < Math.ceil(impact * 8); i++) emit(dustFor(surface), point, rotation, false);
       nextImpact = .17;
     }
 
-    for (const particles of [dust, sparks]) {
+    for (const particles of [sparks, ...dustPools.values()]) {
       for (const particle of particles) {
         if (particle.life <= 0) continue;
         particle.life -= dt;

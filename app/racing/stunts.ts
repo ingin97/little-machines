@@ -4,7 +4,9 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { arcRows, paint, shoulderRows, smoothProfile, straightRows, type SurfaceRow } from "./surfaces.ts";
 
-type Strip = (name: string, rows: SurfaceRow[], material: StandardMaterial, solid?: boolean, bands?: readonly number[]) => void;
+import type { DrivingSurface } from "./drivingSurfaces.ts";
+
+type Strip = (name: string, rows: SurfaceRow[], material: StandardMaterial, solid?: boolean, bands?: readonly number[], drivingSurface?: DrivingSurface) => void;
 type Paved = (name: string, rows: SurfaceRow[], solid?: boolean, bands?: readonly number[]) => void;
 
 export function addStuntArea(scene: Scene, pieces: Mesh[], paved: Paved, strip: Strip) {
@@ -14,32 +16,32 @@ export function addStuntArea(scene: Scene, pieces: Mesh[], paved: Paved, strip: 
   const coral = paint(scene, "#ed755b");
   const cream = paint(scene, "#fff1cc");
 
-  function deck(name: string, rows: SurfaceRow[], material: StandardMaterial, shoulder: number, bands?: readonly number[]) {
-    strip(name, rows, material, true, bands);
-    for (const side of [-1, 1] as const) strip(name + " shoulder", shoulderRows(rows, side, shoulder), meadow, true);
+  function deck(name: string, rows: SurfaceRow[], material: StandardMaterial, shoulder: number, bands?: readonly number[], drivingSurface?: DrivingSurface) {
+    strip(name, rows, material, true, bands, drivingSurface);
+    for (const side of [-1, 1] as const) strip(name + " shoulder", shoulderRows(rows, side, shoulder), meadow, true, undefined, "grass");
   }
 
   // The wide hill road can be driven both ways. The north fork joins at its flat summit.
   const downhill = straightRows(-151, 105, Math.PI, 10.5, smoothProfile([[0, .025], [39, 11], [66, 11], [145, .025], [169, .025]]));
   paved("stunt downhill", downhill, true);
-  for (const side of [-1, 1] as const) strip("downhill hillside", shoulderRows(downhill, side, 19), meadow, true);
+  for (const side of [-1, 1] as const) strip("downhill hillside", shoulderRows(downhill, side, 19), meadow, true, undefined, "grass");
   const northwest = straightRows(-76, 48, -Math.PI / 2, 7.4,
     smoothProfile([[0, .025], [9, .025], [64, 11], [75, 11]]));
   paved("summit road", northwest, true);
-  for (const side of [-1, 1] as const) strip("summit shoulder", shoulderRows(northwest, side, 13), meadow, true);
+  for (const side of [-1, 1] as const) strip("summit shoulder", shoulderRows(northwest, side, 13), meadow, true, undefined, "grass");
 
   const atBottom = downhill[downhill.length - 1];
   const bend = arcRows(atBottom, 28, -Math.PI / 2, 1.36);
   paved("stunt banked bend", bend, true);
-  strip("banked bend outer shoulder", shoulderRows(bend, 1, 10), meadow, true);
+  strip("banked bend outer shoulder", shoulderRows(bend, 1, 10), meadow, true, undefined, "grass");
   const exit = bend[bend.length - 1];
   paved("stunt exit", straightRows(exit.x, exit.z, exit.heading, 10.5, [[0, .025], [58, .025]]));
   paved("stunt exit link", straightRows(-65, -92, 0, 7.2, [[0, .030], [18, .030]]));
 
   deck("rolling hills", straightRows(-188, 53, Math.PI, 10, smoothProfile(
-    [[0, .02], [17, 3.3], [32, .65], [50, 4.8], [69, .65], [86, 3.2], [101, .02]], 2.2)), meadow, 7);
+    [[0, .02], [17, 3.3], [32, .65], [50, 4.8], [69, .65], [86, 3.2], [101, .02]], 2.2)), meadow, 7, undefined, "grass");
   deck("optional stunt jump", straightRows(-177, -50, Math.PI, 6.5,
-    [[0, .02], [6, .28], [12, 1.25], [17, 2.85], [21, .02]]), gold, 4.5);
+    [[0, .02], [6, .28], [12, 1.25], [17, 2.85], [21, .02]]), gold, 4.5, undefined, "sand");
 
   // The rounded floor is open at both ends and the wall tops taper to grass on the outside.
   const pipe = straightRows(-116, -13, Math.PI, 12, [[0, .033], [52, .033]]);

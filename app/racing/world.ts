@@ -16,6 +16,8 @@ import { addScenicLoop } from "./scenic.ts";
 import { createLandmarks } from "./landmarks.ts";
 import { createPlaythings } from "./playthings.ts";
 import { paint, shoulderRows, straightRows, surface, type SurfaceRow } from "./surfaces.ts";
+import { drivingSurfaces, setColliderSurface, type DrivingSurface } from "./drivingSurfaces.ts";
+import { sampleRoadSpline } from "./roadSpline.ts";
 
 export type Spawn = { x: number; y: number; z: number; heading: number };
 export const spawn: Spawn = { x: 0, y: .87, z: -8, heading: 0 };
@@ -25,11 +27,11 @@ const east = Math.PI / 2;
 const flat = [-1, 1] as const;
 
 export function createWorld(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator) {
-  const grass = paint(scene, "#a4d467");
+  const grass = paint(scene, drivingSurfaces.grass.color);
   const grassHill = paint(scene, "#85bd59");
-  const road = paint(scene, "#596477");
+  const road = paint(scene, drivingSurfaces.asphalt.color);
   const edge = paint(scene, "#fff0bb");
-  const sand = paint(scene, "#f3ca84");
+  const sand = paint(scene, drivingSurfaces.sand.color);
   const orange = paint(scene, "#f47856");
   const teal = paint(scene, "#50bba9");
   const purple = paint(scene, "#777ac9");
@@ -41,7 +43,7 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
   ground.material = grass;
   ground.receiveShadows = true;
   ground.freezeWorldMatrix();
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(265, .5, 265).setTranslation(0, -.5, 0).setFriction(.8));
+  const groundCollider = physics.createCollider(RAPIER.ColliderDesc.cuboid(265, .5, 265).setTranslation(0, -.5, 0).setFriction(.8));
 
   function box(name: string, size: [number, number, number], point: [number, number, number], material: StandardMaterial, solid = false) {
     const [width, height, depth] = size;
@@ -56,8 +58,8 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
     return mesh;
   }
 
-  function strip(name: string, rows: SurfaceRow[], material: StandardMaterial, solid = false, bands: readonly number[] = flat) {
-    const mesh = surface(scene, name, material, rows, bands, solid ? physics : undefined);
+  function strip(name: string, rows: SurfaceRow[], material: StandardMaterial, solid = false, bands: readonly number[] = flat, drivingSurface: DrivingSurface = "asphalt") {
+    const mesh = surface(scene, name, material, rows, bands, solid ? physics : undefined, drivingSurface);
     staticPieces.push(mesh);
   }
 
@@ -103,16 +105,18 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
       y: (row.y - row.bank) / 2,
       bank: (row.y - row.bank) / 2,
     }));
-    strip("grass shoulder", shoulder, grassHill, true);
+    strip("grass shoulder", shoulder, grassHill, true, flat, "grass");
   }
 
   // The bridge has gentle approaches and a full-width underpass on the north road.
   const bridgeZ = 53;
-  for (const [x, heading] of [[-69, east], [69, -east]]) {
-    paved("bridge approach", straightRows(x, bridgeZ, heading, 6,
-      [[0, .02], [17, .02], [26, .6], [38, 2.4], [49, 4.9], [57.5, 6.5]]), true);
-  }
-  paved("bridge deck", straightRows(-11.5, bridgeZ, east, 6, [[0, 6.516], [23, 6.516]]));
+  const bridgeProfile = [
+    [-69, .02, 0], [-52, .02, 0], [-43, .6, .12], [-31, 2.4, .19], [-20, 4.9, .22], [-11.5, 6.516, 0],
+    [11.5, 6.516, 0], [20, 4.9, -.22], [31, 2.4, -.19], [43, .6, -.12], [52, .02, 0], [69, .02, 0],
+  ];
+  paved("bridge road", sampleRoadSpline(bridgeProfile.map(([x, y, slope]) => ({
+    position: { x, y, z: bridgeZ }, tangent: { x: 1, y: slope, z: 0 }, halfWidth: 6,
+  }))), true);
   box("bridge span", [23, .55, 12], [0, 6.225, bridgeZ], teal, true);
   for (const side of [-1, 1]) {
     for (const [x, height] of [[10.85, 6.2], [20, 4.9], [31, 2.4]]) {
@@ -145,7 +149,7 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
       return { x: x + Math.sin(angle) * halfWidth / 2, z: z + Math.cos(angle) * halfWidth / 2,
         heading: angle + east, y: height / 2 - .008, bank: height / 2, halfWidth: halfWidth / 2 };
     });
-    staticPieces.push(surface(scene, "rolling hill", grassHill, rings, [-1, -.72, -.44, 0, .44, .72, .999], physics));
+    staticPieces.push(surface(scene, "rolling hill", grassHill, rings, [-1, -.72, -.44, 0, .44, .72, .999], physics, "grass"));
   }
 
   const jumps = [
@@ -154,8 +158,8 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
   ] as const;
   for (const { x, z, halfWidth, profile } of jumps) {
     const rows = straightRows(x, z, 0, halfWidth, profile);
-    strip("jump ramp", rows, sand, true);
-    for (const side of [-1, 1] as const) strip("ramp shoulder", shoulderRows(rows, side, 6, 0), grassHill, true);
+    strip("jump ramp", rows, sand, true, flat, "sand");
+    for (const side of [-1, 1] as const) strip("ramp shoulder", shoulderRows(rows, side, 6, 0), grassHill, true, flat, "grass");
     const lip = profile[profile.length - 2];
     box("jump marker", [halfWidth * 1.82, .09, .45], [x, lip[1] + .056, z + lip[0] - .2], orange);
   }
@@ -210,22 +214,22 @@ export function createWorld(scene: Scene, physics: RAPIER.World, shadows: Shadow
 
   const stuntToys = createStuntToys(scene, physics, shadows);
   const playthings = createPlaythings(scene, physics, shadows);
+  function isGrass({ x, z }: RAPIER.Vector) {
+    const ax = Math.abs(x);
+    const az = Math.abs(z);
+    const corner = Math.hypot(ax - 54, az - 54);
+    const loop = (ax <= 54 && Math.abs(az - 76) < 7)
+      || (az <= 54 && Math.abs(ax - 76) < 7)
+      || (ax >= 54 && az >= 54 && Math.abs(corner - 22) < 7);
+    return !stunts.onRoad(x, z) && !scenic.onRoad({ x, z }) && !loop && !(ax < 6.5 && az < 83) && !(az < 6.5 && ax < 83);
+  }
+  setColliderSurface(physics, groundCollider, (point) => isGrass(point) ? "grass" : "asphalt");
   return {
     stepStuntToys: stuntToys.step,
     checkGoals(dt: number, car: Vector3) {
       const scored = playthings.checkGoals(dt, car);
       if (scored) footballGoal.celebrate();
       return scored;
-    },
-    isGrass: ({ x, y, z }: Vector3) => {
-      const ax = Math.abs(x);
-      const az = Math.abs(z);
-      const corner = Math.hypot(ax - 54, az - 54);
-      const loop = (ax <= 54 && Math.abs(az - 76) < 7)
-        || (az <= 54 && Math.abs(ax - 76) < 7)
-        || (ax >= 54 && az >= 54 && Math.abs(corner - 22) < 7);
-      const bridge = ax < 52 && Math.abs(z - 53) < 6 && y > 1;
-      return !stunts.onRoad(x, z) && !scenic.onRoad({ x, z }) && !loop && !bridge && !(ax < 6.5 && az < 83) && !(az < 6.5 && ax < 83);
     },
     padAt: ({ x, y, z }: RAPIER.Vector) => y > .35 && y < 1.45
       ? pads.findIndex((pad) => Math.abs(x - pad.x) < pad.halfX && Math.abs(z - pad.z) < pad.halfZ)

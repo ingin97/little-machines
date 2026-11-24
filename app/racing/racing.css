@@ -21,6 +21,7 @@ button:hover { background: #ffdf84; }
 button:focus-visible, input:focus-visible { outline: 3px solid #236e8b; outline-offset: 3px; }
 #settings { font-size: 22px; }
 #status { position: absolute; bottom: 18px; left: 20px; margin: 0; font-size: .85rem; pointer-events: none; }
+#status a { pointer-events: auto; }
 #local-players { position: absolute; bottom: 18px; right: 20px; margin: 0; font-size: .85rem; pointer-events: none; }
 .touch { display: none; position: absolute; inset: auto 20px 60px; gap: 8px; }
 .touch button { touch-action: none; min-width: 50px; min-height: 50px; }
@@ -36,6 +37,19 @@ dialog label { display: block; }
 dialog input[type=range] { display: block; width: 100%; margin: 6px 0 0; accent-color: #267271; }
 dialog input[type=checkbox] { accent-color: #267271; }
 dialog output { float: right; }
+#world-picker :is(select, input) {
+  display: block;
+  width: 100%;
+  margin-block-start: 4px;
+  padding: .48em .66em;
+  border: 1px solid #718982;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+#world-picker .presets { display: flex; flex-wrap: wrap; gap: 8px; }
+#world-picker button:disabled { opacity: .55; }
 dialog p { font-size: .85rem; margin: 0; }
 #calibration:empty { display: none; }
 .garage { margin: 0; padding: 6px 0 0; border: 0; min-width: 0; }
@@ -51,7 +65,7 @@ dialog p { font-size: .85rem; margin: 0; }
 [hidden] { display: none !important; }
 .hud { gap: 8px; }
 .mode-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
-.mode-actions a {
+.mode-actions a, #choose-world {
   pointer-events: auto;
   border-radius: 15px;
   background: #fffbed;
@@ -59,7 +73,7 @@ dialog p { font-size: .85rem; margin: 0; }
   padding: .55em .85em;
   box-shadow: 0 3px 0 #20343735;
 }
-.mode-actions a:hover { background: #ffdf84; }
+.mode-actions a:hover, #choose-world:hover { background: #ffdf84; }
 .mode-actions a:focus-visible { outline: 3px solid #236e8b; outline-offset: 3px; }
 .mode-actions kbd { font-size: .8em; }
 body[data-mode="sprint"] .park-setting { display: none; }

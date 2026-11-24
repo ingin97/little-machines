@@ -7,6 +7,8 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import type { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { paint, shoulderRows, straightRows, type SurfaceRow } from "./surfaces.ts";
 
+import type { DrivingSurface } from "./drivingSurfaces.ts";
+
 const width = 7.5;
 const center = 151;
 const radiusX = 70;
@@ -15,7 +17,7 @@ const radiusZ = 54;
 export function addScenicLoop(
   scene: Scene, pieces: Mesh[],
   paved: (name: string, rows: SurfaceRow[], solid?: boolean) => void,
-  strip: (name: string, rows: SurfaceRow[], material: StandardMaterial, solid?: boolean) => void,
+  strip: (name: string, rows: SurfaceRow[], material: StandardMaterial, solid?: boolean, bands?: readonly number[], drivingSurface?: DrivingSurface) => void,
 ) {
   const blue = paint(scene, "#4384bc");
   const yellow = paint(scene, "#ffe279");
@@ -32,18 +34,18 @@ export function addScenicLoop(
     };
   });
   paved("scenic loop", rows, true);
-  for (const side of [-1, 1] as const) strip("hill shoulder", shoulderRows(rows, side, 18), grass, true);
+  for (const side of [-1, 1] as const) strip("hill shoulder", shoulderRows(rows, side, 18), grass, true, undefined, "grass");
   for (const [z, finish] of [[-40, 105], [0, 83], [40, 105]]) {
     paved("scenic access road", straightRows(76, z, Math.PI / 2, 6.5, [[0, .036], [finish - 76, .036]]));
   }
   const jump = straightRows(130, -35, Math.PI / 2, 7.5,
     [[0, .02], [10, .3], [17, 1.35], [22, 3.45], [24, .015]]);
-  strip("scenic jump", jump, dirt, true);
+  strip("scenic jump", jump, dirt, true, undefined, "sand");
   for (const side of [-1, 1]) {
     strip("scenic jump shoulder", jump.map((row) => ({
       ...row, z: row.z - side * (row.halfWidth + 3), halfWidth: 3,
       y: row.y / 2, bank: -side * row.y / 2,
-    })), grass, true);
+    })), grass, true, undefined, "grass");
   }
 
   function box(name: string, size: [number, number, number], at: [number, number, number], material: StandardMaterial) {

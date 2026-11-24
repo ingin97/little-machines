@@ -1,0 +1,606 @@
+{
+  "version": 1,
+  "id": "sommerlia",
+  "name": "Sommerlia",
+  "terrain": {
+    "halfExtent": 220,
+    "relief": 12,
+    "phase": 2.94,
+    "surface": "grass",
+    "flatRadius": 63,
+    "zones": [
+      {
+        "x": -48,
+        "z": -38,
+        "radius": 20,
+        "surface": "mud"
+      },
+      {
+        "x": 30,
+        "z": 36,
+        "radius": 18,
+        "surface": "grass"
+      },
+      {
+        "x": -29,
+        "z": 28,
+        "radius": 13,
+        "surface": "asphalt"
+      },
+      {
+        "x": 48,
+        "z": -43,
+        "radius": 18,
+        "surface": "grass"
+      }
+    ]
+  },
+  "junctions": [
+    {
+      "id": "south",
+      "position": {
+        "x": 0,
+        "y": 0.18,
+        "z": -82
+      }
+    },
+    {
+      "id": "north",
+      "position": {
+        "x": 0,
+        "y": 0.18,
+        "z": 83
+      }
+    },
+    {
+      "id": "plaza",
+      "position": {
+        "x": 0,
+        "y": 0.18,
+        "z": 0
+      }
+    },
+    {
+      "id": "west",
+      "position": {
+        "x": -95,
+        "y": 5.8500000000000005,
+        "z": 4
+      }
+    },
+    {
+      "id": "east",
+      "position": {
+        "x": 95,
+        "y": 4.41,
+        "z": -8
+      }
+    },
+    {
+      "id": "small-jump",
+      "position": {
+        "x": -29,
+        "y": 1.45,
+        "z": 0
+      }
+    },
+    {
+      "id": "large-jump",
+      "position": {
+        "x": 40,
+        "y": 3,
+        "z": 0
+      }
+    }
+  ],
+  "roads": [
+    {
+      "id": "avenue-south",
+      "from": "south",
+      "to": "plaza",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": -82
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 7,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 7,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "avenue-north",
+      "from": "plaza",
+      "to": "north",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 7,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 83
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 7,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "west-climb",
+      "from": "south",
+      "to": "west",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": -82
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": -61,
+            "y": 2.34,
+            "z": -83
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0.15,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": 0.12
+        },
+        {
+          "position": {
+            "x": -81,
+            "y": 4.77,
+            "z": -54
+          },
+          "tangent": {
+            "x": -0.49,
+            "y": 0.1,
+            "z": 0.88
+          },
+          "halfWidth": 6.1,
+          "bank": 0.12
+        },
+        {
+          "position": {
+            "x": -95,
+            "y": 5.85,
+            "z": 4
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 6.1,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "west-descent",
+      "from": "west",
+      "to": "north",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": -95,
+            "y": 5.85,
+            "z": 4
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 6.1,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": -85,
+            "y": 9,
+            "z": 57
+          },
+          "tangent": {
+            "x": 0.43,
+            "y": 0,
+            "z": 0.9
+          },
+          "halfWidth": 6.1,
+          "bank": 0.12
+        },
+        {
+          "position": {
+            "x": -61,
+            "y": 4.59,
+            "z": 102
+          },
+          "tangent": {
+            "x": 0.93,
+            "y": -0.28,
+            "z": 0.2
+          },
+          "halfWidth": 5.4,
+          "bank": 0.066
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 83
+          },
+          "tangent": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "east-cliff",
+      "from": "south",
+      "to": "east",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": -82
+          },
+          "tangent": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 44,
+            "y": 3.15,
+            "z": -96
+          },
+          "tangent": {
+            "x": 0.98,
+            "y": 0.13,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": -0.06
+        },
+        {
+          "position": {
+            "x": 63,
+            "y": 5.58,
+            "z": -76
+          },
+          "tangent": {
+            "x": 0.7,
+            "y": 0,
+            "z": 0.7
+          },
+          "halfWidth": 5.4,
+          "bank": -0.12
+        },
+        {
+          "position": {
+            "x": 95,
+            "y": 4.41,
+            "z": -8
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 6,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "east-return",
+      "from": "east",
+      "to": "north",
+      "surface": "grass",
+      "knots": [
+        {
+          "position": {
+            "x": 95,
+            "y": 4.41,
+            "z": -8
+          },
+          "tangent": {
+            "x": 0,
+            "y": 0,
+            "z": 1
+          },
+          "halfWidth": 6,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 78,
+            "y": 3.42,
+            "z": 62
+          },
+          "tangent": {
+            "x": -0.56,
+            "y": -0.13,
+            "z": 0.82
+          },
+          "halfWidth": 6,
+          "bank": -0.12
+        },
+        {
+          "position": {
+            "x": 46,
+            "y": 0.72,
+            "z": 94
+          },
+          "tangent": {
+            "x": -0.97,
+            "y": -0.07,
+            "z": 0.2
+          },
+          "halfWidth": 5.4,
+          "bank": -0.06
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 83
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5.4,
+          "bank": 0
+        }
+      ]
+    },
+    {
+      "id": "small-jump",
+      "from": "plaza",
+      "to": "small-jump",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": -17,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": -29,
+            "y": 1.45,
+            "z": 0
+          },
+          "tangent": {
+            "x": -1,
+            "y": 0.25,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        }
+      ],
+      "structure": "ramp"
+    },
+    {
+      "id": "large-jump",
+      "from": "plaza",
+      "to": "large-jump",
+      "surface": "asphalt",
+      "knots": [
+        {
+          "position": {
+            "x": 0,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 17,
+            "y": 0.18,
+            "z": 0
+          },
+          "tangent": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        },
+        {
+          "position": {
+            "x": 40,
+            "y": 3,
+            "z": 0
+          },
+          "tangent": {
+            "x": 1,
+            "y": 0.4,
+            "z": 0
+          },
+          "halfWidth": 5,
+          "bank": 0
+        }
+      ],
+      "structure": "ramp"
+    }
+  ],
+  "bridges": [
+    {
+      "road": "east-cliff",
+      "x": 63,
+      "z": -76,
+      "radius": 30
+    }
+  ],
+  "tunnels": [
+    {
+      "x": 0,
+      "y": 0.18,
+      "z": -40,
+      "length": 21,
+      "width": 15.4,
+      "height": 5.5
+    }
+  ],
+  "attractions": {
+    "football": {
+      "x": 28,
+      "y": 0,
+      "z": 45
+    },
+    "bowling": {
+      "x": -27,
+      "y": 0,
+      "z": 28
+    },
+    "stars": [
+      {
+        "x": -25,
+        "y": 1.4,
+        "z": 19
+      },
+      {
+        "x": 0,
+        "y": 1.53,
+        "z": 32
+      },
+      {
+        "x": -95,
+        "y": 7.200000000000001,
+        "z": 4
+      },
+      {
+        "x": 95,
+        "y": 5.76,
+        "z": -8
+      }
+    ]
+  },
+  "landmarks": [
+    {
+      "x": -116,
+      "z": 51,
+      "height": 20,
+      "kind": "tower"
+    },
+    {
+      "x": -25,
+      "z": 53,
+      "height": 11,
+      "kind": "tower"
+    },
+    {
+      "x": 42,
+      "z": -55,
+      "height": 9,
+      "kind": "tower"
+    }
+  ],
+  "spawn": {
+    "x": 0,
+    "y": 1.05,
+    "z": -18,
+    "heading": 0
+  }
+}
