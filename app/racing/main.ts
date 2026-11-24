@@ -14,6 +14,7 @@ import { createControls } from "./controls";
 import { createVehicle, sprintHandling, sprintTopSpeed, stepTime } from "./vehicle";
 import { createWorld, spawn } from "./world";
 import { createSprintCourse } from "./sprintCourse";
+import { addProceduralSprintGates, buildProceduralSprint } from "./proceduralSprint.ts";
 import { createSprint } from "./sprint";
 import { classicWorldIdentity, definitionIdentity } from "./worldDefinition.ts";
 import { createDefinedWorld } from "./worldRuntime.ts";
@@ -55,32 +56,33 @@ async function start() {
   const params = new URLSearchParams(location.search);
   const racing = params.get("mode") === "sprint";
   const ridge = params.get("track") === "ridge";
-  const course = racing ? createSprintCourse(scene, physics, ridge) : undefined;
   let choice: ReturnType<typeof readWorldChoice> = { id: "classic" };
-  if (!racing) {
-    try {
-      choice = readWorldChoice(params);
-    } catch (error) {
-      const status = document.querySelector("#status")!;
-      const returnLink = document.createElement("a");
-      returnLink.href = worldURL(choice, location.href).href;
-      returnLink.textContent = "Åpne Kjøreparken";
-      status.replaceChildren(error instanceof Error ? error.message + " " : "", returnLink);
-      engine.dispose();
-      physics.free();
-      return;
-    }
+  try {
+    choice = readWorldChoice(params);
+  } catch (error) {
+    const status = document.querySelector("#status")!;
+    const returnLink = document.createElement("a");
+    returnLink.href = worldURL(choice, location.href).href;
+    returnLink.textContent = "Åpne Kjøreparken";
+    status.replaceChildren(error instanceof Error ? error.message + " " : "", returnLink);
+    engine.dispose();
+    physics.free();
+    return;
   }
-  const definition = racing ? undefined : resolveWorld(choice);
+  const selectedWorld = resolveWorld(choice);
+  const definition = racing && (!selectedWorld?.generation || params.has("track")) ? undefined : selectedWorld;
   if (definition) {
     ambient.intensity = .70;
     sun.intensity = .85;
   }
   const identity = definition ? await definitionIdentity(definition) : classicWorldIdentity;
+  const layout = racing && definition ? buildProceduralSprint(definition, identity.hash) : undefined;
+  const proceduralCourse = layout && addProceduralSprintGates(scene, layout);
+  const classicCourse = racing && !proceduralCourse ? createSprintCourse(scene, physics, ridge) : undefined;
+  const course = proceduralCourse ?? classicCourse;
   const worldDialog = racing ? undefined : setupWorldPicker(choice);
-  const playground = racing ? undefined : definition
-    ? createDefinedWorld(scene, physics, shadows, definition)
-    : createWorld(scene, physics, shadows);
+  const playground = definition ? createDefinedWorld(scene, physics, shadows, definition, !racing)
+    : racing ? undefined : createWorld(scene, physics, shadows);
   const startingLane = course?.spawn ?? definition?.spawn ?? (params.get("input") === "keyboard" ? { ...spawn, x: -3.35 } : spawn);
   const car = createVehicle(scene, physics, shadows, startingLane, playground?.padAt ?? (() => -1),
     racing ? sprintHandling : undefined, definition?.terrain.halfExtent);
@@ -88,27 +90,38 @@ async function start() {
   const controls = createControls(sprint?.reset ?? car.reset, racing, worldDialog);
   if (racing) {
     document.body.dataset.mode = "sprint";
-    document.title = "Tidkjøring · Kjøreparken";
-    document.querySelector("h1")!.textContent = "Tidkjøring";
+    const title = layout?.name ?? "Tidkjøring";
+    document.title = `${title} · Kjøreparken`;
+    document.querySelector("h1")!.textContent = title;
     document.querySelector("canvas")!.setAttribute("aria-label", "Tidkjøring");
     document.querySelector<HTMLElement>("#sprint-hud")!.hidden = false;
     document.querySelector<HTMLButtonElement>("#sprint-retry")!.hidden = false;
     document.querySelector<HTMLButtonElement>("#sprint-retry")!.onclick = sprint!.reset;
     document.querySelector<HTMLAnchorElement>("#sprint-mode")!.hidden = true;
     const parkLink = document.querySelector<HTMLAnchorElement>("#park-mode")!;
+    if (selectedWorld?.generation) {
+      const worldTrack = document.querySelector<HTMLAnchorElement>("#procedural-track")!;
+      const url = worldURL(choice, location.href);
+      url.searchParams.set("mode", "sprint");
+      worldTrack.href = url.href;
+      worldTrack.textContent = selectedWorld.name;
+      if (layout) worldTrack.setAttribute("aria-current", "page");
+      worldTrack.hidden = false;
+    }
     for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-track]")) {
       const trackParams = new URLSearchParams(params);
-      if (link.dataset.track === "ridge") trackParams.set("track", "ridge");
+      if (link.dataset.track === "ridge" || selectedWorld?.generation) trackParams.set("track", link.dataset.track!);
       else trackParams.delete("track");
       link.href = `?${trackParams}`;
-      if ((link.dataset.track === "ridge") === ridge) link.setAttribute("aria-current", "page");
+      if (!proceduralCourse && (link.dataset.track === "ridge") === ridge) link.setAttribute("aria-current", "page");
     }
+    if (selectedWorld?.generation) parkLink.textContent = "Fri kjøring";
     params.delete("mode");
     params.delete("track");
     parkLink.href = params.size ? `?${params}` : "./racing.html";
     parkLink.hidden = false;
   } else {
-    const sprintLink = new URL(location.href);
+    const sprintLink = worldURL(choice, location.href);
     sprintLink.searchParams.set("mode", "sprint");
     document.querySelector<HTMLAnchorElement>("#sprint-mode")!.href = sprintLink.href;
   }
@@ -159,7 +172,9 @@ async function start() {
       accumulator += dt;
       while (accumulator >= stepTime) {
         if (!sprint || sprint.beforeStep()) {
-          car.step(input, course ? (course.isGrass(car.position()) ? offRoadSettings : raceSettings) : controls.settings);
+          const position = car.position();
+          const offRoad = proceduralCourse?.isOffRoad(position) ?? classicCourse?.isGrass(position);
+          car.step(input, course ? (offRoad ? offRoadSettings : raceSettings) : controls.settings);
           physics.step(contacts);
           sprint?.afterStep();
           if (playground) {
@@ -189,7 +204,7 @@ async function start() {
     const speed = car.speed();
     const grounded = car.grounded();
     const boost = car.boost();
-    const surface = course?.isGrass(car.root.position) ? "grass" : car.surface();
+    const surface = classicCourse?.isGrass(car.root.position) ? "grass" : car.surface();
     playground?.sync(car.root.position, boost, active ? dt : 0);
     audio.update(controls.settings.sound, active, sprint && !sprint.driving() ? 0 : speed, grounded, boost, surface, car.skid());
     sprint?.draw(active ? accumulator / stepTime : 1);

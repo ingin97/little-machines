@@ -15,7 +15,7 @@ import { paint, surface } from "./surfaces.ts";
 import { roadBands, sampleWorldRoads, terrainSurface, type WorldDefinition } from "./worldDefinition.ts";
 import { buildWorldTerrain } from "./worldTerrain.ts";
 
-export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, definition: WorldDefinition) {
+export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, definition: WorldDefinition, interactive = true) {
   const staticPieces: Mesh[] = [];
   const roads = sampleWorldRoads(definition);
   const terrain = buildWorldTerrain(definition, roads);
@@ -178,11 +178,11 @@ export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows:
 
   const { football, bowling, stars } = definition.attractions;
   const target = { ...goal, x: football.x, y: football.y, z: football.z };
-  const footballGoal = addFootballGoal(scene, staticPieces, target);
-  const playthings = createPlaythings(scene, physics, shadows, {
+  const footballGoal = interactive ? addFootballGoal(scene, staticPieces, target) : undefined;
+  const playthings = interactive ? createPlaythings(scene, physics, shadows, {
     target, balls: [{ x: football.x, y: football.y, z: football.z - 15 }], stacks: [],
-  });
-  const stuntToys = createStuntToys(scene, physics, shadows, { bowling, stars });
+  }) : undefined;
+  const stuntToys = interactive ? createStuntToys(scene, physics, shadows, { bowling, stars }) : undefined;
 
   const batches = new Map<typeof edge, Mesh[]>();
   for (const piece of staticPieces) {
@@ -200,16 +200,18 @@ export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows:
 
   return {
     padAt: () => -1,
-    stepStuntToys: stuntToys.step,
-    checkGoals(dt: number, car: Parameters<typeof playthings.checkGoals>[1]) {
-      const scored = playthings.checkGoals(dt, car);
-      if (scored) footballGoal.celebrate();
+    stepStuntToys(...args: Parameters<ReturnType<typeof createStuntToys>["step"]>) {
+      return stuntToys?.step(...args) ?? { collected: false, knocked: false };
+    },
+    checkGoals(dt: number, car: Parameters<ReturnType<typeof createPlaythings>["checkGoals"]>[1]) {
+      const scored = playthings?.checkGoals(dt, car) ?? false;
+      if (scored) footballGoal?.celebrate();
       return scored;
     },
-    sync(car: Parameters<typeof playthings.sync>[0], _boost: number, dt: number) {
-      playthings.sync(car);
-      stuntToys.render(dt);
-      footballGoal.update(dt);
+    sync(car: Parameters<ReturnType<typeof createPlaythings>["sync"]>[0], _boost: number, dt: number) {
+      playthings?.sync(car);
+      stuntToys?.render(dt);
+      footballGoal?.update(dt);
     },
   };
 }

@@ -13,7 +13,10 @@ import { connectWorldPeer } from "../app/racing/worldPeer.ts";
 import { createDefinedWorld } from "../app/racing/worldRuntime.ts";
 import { buildWorldTerrain } from "../app/racing/worldTerrain.ts";
 import { validateWorld } from "../app/racing/worldValidation.ts";
-import { createVehicle, stepTime } from "../app/racing/vehicle.ts";
+import { createVehicle, sprintHandling, sprintTopSpeed, stepTime } from "../app/racing/vehicle.ts";
+
+import { buildProceduralSprint } from "../app/racing/proceduralSprint.ts";
+import { gateCrossing } from "../app/racing/sprintRules.ts";
 
 await RAPIER.init();
 
@@ -94,6 +97,59 @@ test("generated terrain matches Rapier heights and the spawn reaches the end of 
     assert.ok(Math.abs(car.position().x) < 2, preset);
     assert.equal(car.revision(), reset, preset);
     assert.ok(car.wheelSurfaces().includes("asphalt"), preset);
+  }
+});
+
+test("each procedural time trial can be completed using the adult vehicle and generated road colliders", async (t) => {
+  for (const preset of Object.keys(presets)) {
+    await t.test(preset, async () => {
+      const world = generateWorld(preset, "2026");
+      const { hash } = await definitionIdentity(world);
+      const layout = buildProceduralSprint(world, hash);
+      assert.deepEqual(layout, buildProceduralSprint(generateWorld(preset, "2026"), hash));
+      const other = generateWorld(preset, "7");
+      assert.notEqual(layout.recordKey, buildProceduralSprint(other, (await definitionIdentity(other)).hash).recordKey);
+
+      const engine = new NullEngine();
+      const scene = new Scene(engine);
+      const sun = new DirectionalLight("sun", new Vector3(-.45, -1, .36), scene);
+      const shadows = new ShadowGenerator(64, sun);
+      const physics = new RAPIER.World({ x: 0, y: -16, z: 0 });
+      physics.timestep = stepTime;
+      try {
+        const park = createDefinedWorld(scene, physics, shadows, world, false);
+        const car = createVehicle(scene, physics, shadows, layout.spawn, park.padAt, sprintHandling, world.terrain.halfExtent);
+        const settings = { speed: sprintTopSpeed, gentle: false, automatic: false, reverse: false, recovery: false };
+        const cruiseSpeed = preset === "alpine" ? 12 : 16;
+        const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+        let row = 0;
+        let gate = 0;
+        const revision = car.revision();
+        // Steer toward a point a few metres ahead, using modest speed through the bends.
+        for (let tick = 0; tick < 60 / stepTime && gate < layout.gates.length; tick++) {
+          const point = car.position();
+          const { x, y, z, w } = car.rotation();
+          while (row + 1 < layout.rows.length && distance(layout.rows[row + 1], point) < distance(layout.rows[row], point)) row++;
+          const target = layout.rows[Math.min(row + 4, layout.rows.length - 1)];
+          const heading = Math.atan2(2 * (w * y + x * z), 1 - 2 * (x * x + y * y));
+          const error = Math.atan2(target.x - point.x, target.z - point.z) - heading;
+          const speed = car.speed();
+          car.step({
+            steer: Math.max(-1, Math.min(1, Math.atan2(Math.sin(error), Math.cos(error)) * 2.8)),
+            accelerator: Math.max(0, Math.min(1, (cruiseSpeed - speed) * .4)),
+            brake: speed > cruiseSpeed + 2 ? .3 : 0,
+          }, settings);
+          physics.step();
+          assert.equal(car.revision(), revision, "car stayed on course without resetting");
+          if (gateCrossing(point, car.position(), layout.gates[gate]) !== null) gate++;
+        }
+        assert.equal(gate, layout.gates.length);
+      } finally {
+        scene.dispose();
+        engine.dispose();
+        physics.free();
+      }
+    });
   }
 });
 

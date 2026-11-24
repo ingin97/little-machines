@@ -5,11 +5,13 @@ import { decodeRecord, gateCrossing, maxReplaySeconds, type GhostFrame } from ".
 import type { createSprintCourse } from "./sprintCourse.ts";
 import { stepTime, type createVehicle } from "./vehicle.ts";
 
+type SprintCourse = Pick<ReturnType<typeof createSprintCourse>, "gates" | "recordKey" | "highlight">;
+
 const countdownTicks = 180;
 const seconds = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatTime = (time: number) => `${seconds.format(time)} s`;
 
-export function createSprint(scene: Scene, course: ReturnType<typeof createSprintCourse>, car: ReturnType<typeof createVehicle>) {
+export function createSprint(scene: Scene, course: SprintCourse, car: ReturnType<typeof createVehicle>) {
   const clock = document.querySelector("#sprint-clock")!;
   const best = document.querySelector("#sprint-best")!;
   const progress = document.querySelector("#sprint-progress")!;
