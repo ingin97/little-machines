@@ -63,7 +63,7 @@ export function shoulderRows(rows: SurfaceRow[], side: -1 | 1, width: number, gr
 
 export function surface(
   scene: Scene, name: string, material: StandardMaterial, rows: SurfaceRow[],
-  bands: readonly number[], physics?: RAPIER.World, drivingSurface?: DrivingSurface,
+  bands: readonly number[], physics?: RAPIER.World, drivingSurface?: DrivingSurface | ((point: RAPIER.Vector) => DrivingSurface),
 ) {
   const positions: number[] = [];
   const indices: number[] = [];

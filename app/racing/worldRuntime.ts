@@ -13,7 +13,7 @@ import { createPlaythings } from "./playthings.ts";
 import { createStuntToys } from "./stuntToys.ts";
 import { paint, surface } from "./surfaces.ts";
 import { roadBands, sampleWorldRoads, terrainSurface, type WorldDefinition } from "./worldDefinition.ts";
-import { buildWorldTerrain } from "./worldTerrain.ts";
+import { buildWorldTerrain, roadShoulders } from "./worldTerrain.ts";
 
 export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows: ShadowGenerator, definition: WorldDefinition, interactive = true) {
   const staticPieces: Mesh[] = [];
@@ -21,6 +21,8 @@ export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows:
   const terrain = buildWorldTerrain(definition, roads);
   const colors = new Map<DrivingSurface, Color3>();
   const roadMaterials = new Map<DrivingSurface, ReturnType<typeof paint>>();
+  const shoulderMaterial = definition.generation?.version === 2
+    ? paint(scene, drivingSurfaces[definition.terrain.surface].color) : undefined;
   const edge = paint(scene, "#fff1cc");
   edge.zOffset = -4;
   const support = paint(scene, "#67848f");
@@ -73,6 +75,23 @@ export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows:
     if (solid) physics.createCollider(RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2).setTranslation(...position));
   }
 
+  function buildDeckSides(span: (typeof roads)[number]["rows"]) {
+    for (const side of [-1, 1]) {
+      const edging = (offset: number, halfWidth: number, facing = 1) => span.map((row) => ({
+        ...row,
+        x: row.x + row.frameRight.x * row.halfWidth * side,
+        y: row.y + row.frameRight.y * row.halfWidth * side + offset,
+        z: row.z + row.frameRight.z * row.halfWidth * side,
+        halfWidth,
+        crown: 0,
+        frameRight: { x: 0, y: side * facing, z: 0 },
+      }));
+      staticPieces.push(surface(scene, "bridge fascia", support, edging(-.45, .46, -1), [-1, 1]));
+      // The wall faces inward and continuously follows the same banked deck samples.
+      staticPieces.push(surface(scene, "bridge rail", support, edging(.32, .32), [-1, 1], physics));
+    }
+  }
+
   const degrees = new Map<string, number>();
   for (const { road } of roads) {
     for (const node of [road.from, road.to]) degrees.set(node, (degrees.get(node) ?? 0) + 1);
@@ -95,28 +114,41 @@ export function createDefinedWorld(scene: Scene, physics: RAPIER.World, shadows:
       for (const bands of [[-.96, -.92], [.92, .96]]) staticPieces.push(surface(scene, "edge stripe", edge, stripes, bands));
     }
     const bridges = definition.bridges.filter((bridge) => bridge.road === road.id);
+    if (shoulderMaterial && !road.structure) {
+      for (const side of [-1, 1] as const) {
+        const strips = roadShoulders(rows, terrain, side, (row) =>
+          nearIntersection(road.from, row, rows[0]) || nearIntersection(road.to, row, rows.at(-1)!)
+          || bridges.some((bridge) => Math.hypot(row.x - bridge.x, row.z - bridge.z) < bridge.radius + 5));
+        for (const strip of strips) {
+          staticPieces.push(surface(scene, "road shoulder", shoulderMaterial, strip, [-1, 1], physics,
+            (point) => terrainSurface(definition, point)));
+        }
+      }
+    }
+    if (road.structure === "deck") {
+      let span: typeof rows = [];
+      for (const row of rows) {
+        const covered = bridges.some((bridge) => Math.hypot(row.x - bridge.x, row.z - bridge.z) <= bridge.radius);
+        if (!covered && row.y - terrain.heightAt(row.x, row.z) > 2.1) {
+          span.push(row);
+        } else {
+          if (span.length > 1) buildDeckSides(span);
+          span = [];
+        }
+      }
+      if (span.length > 1) buildDeckSides(span);
+    }
     for (const bridge of bridges) {
       const span = rows.filter(({ x, z }) => Math.hypot(x - bridge.x, z - bridge.z) <= bridge.radius);
       if (span.length < 2) continue;
-      for (const side of [-1, 1]) {
-        const edging = (offset: number, halfWidth: number, facing = 1) => span.map((row) => ({
-          ...row,
-          x: row.x + row.frameRight.x * row.halfWidth * side,
-          y: row.y + row.frameRight.y * row.halfWidth * side + offset,
-          z: row.z + row.frameRight.z * row.halfWidth * side,
-          halfWidth,
-          crown: 0,
-          frameRight: { x: 0, y: side * facing, z: 0 },
-        }));
-        staticPieces.push(surface(scene, "bridge fascia", support, edging(-.45, .46, -1), [-1, 1]));
-        // The wall faces inward and continuously follows the same banked deck samples.
-        staticPieces.push(surface(scene, "bridge rail", support, edging(.32, .32), [-1, 1], physics));
-      }
+      buildDeckSides(span);
       for (let i = 4; i < span.length - 4; i += 13) {
         const { x, y, z } = span[i];
         const foot = terrain.heightAt(x, z);
         const height = y - foot - .55;
-        if (height > 1) box("bridge pier", [2.4, height, 2.4], [x, foot + height / 2, z], support, true);
+        const roadBelow = definition.generation?.version === 2 && roads.some((other) => other.road.id !== road.id && other.rows.some((row) => row.y < y - 3
+            && Math.hypot(row.x - x, row.z - z) < row.halfWidth + 3));
+        if (height > 1 && !roadBelow) box("bridge pier", [2.4, height, 2.4], [x, foot + height / 2, z], support, true);
       }
     }
   }

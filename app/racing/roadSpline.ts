@@ -36,7 +36,7 @@ function transport(right: RoadVector, from: RoadVector, to: RoadVector) {
 }
 
 /** Sample a continuous Hermite chain. Keep connected spans in the same chain to share their frame. */
-export function sampleRoadSpline(knots: readonly RoadKnot[], spacing = 1, alignEnd = false) {
+export function sampleRoadSpline(knots: readonly RoadKnot[], spacing = 1, alignEnd = false, frame: "transport" | "upright" = "transport") {
   if (knots.length < 2 || !(spacing > 0) || !Number.isFinite(spacing)) {
     throw new Error("Road spline requires two or more knots and positive sample spacing");
   }
@@ -53,7 +53,10 @@ export function sampleRoadSpline(knots: readonly RoadKnot[], spacing = 1, alignE
 
   function row(position: RoadVector, tangent: RoadVector, halfWidth: number, bank: number, crown: number) {
     const direction = unit(tangent);
-    right = transport(right, forward, direction);
+    // World-up banking keeps long, multi-level turns from accumulating unintended roll.
+    right = frame === "upright" && Math.abs(direction.y) < .95
+      ? unit(cross({ x: 0, y: 1, z: 0 }, direction))
+      : transport(right, forward, direction);
     forward = direction;
     const up = cross(forward, right);
     return {

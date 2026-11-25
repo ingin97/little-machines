@@ -1,3 +1,4 @@
+import { selectRaceRoutes } from "./proceduralRaceRoutes.ts";
 import type { RoadVector } from "./roadSpline.ts";
 import { knownSurface, sampleWorldRoads, type WorldDefinition } from "./worldDefinition.ts";
 import { buildWorldTerrain, roadTerrainClearance } from "./worldTerrain.ts";
@@ -27,7 +28,7 @@ export function validateWorld(value: unknown): string[] {
   }
 
   const terrain = record(world.terrain);
-  check(validNumber(terrain.halfExtent, 40, 240), "terrain.halfExtent", "must be 40–240 m");
+  check(validNumber(terrain.halfExtent, 40, 320), "terrain.halfExtent", "must be 40–320 m");
   check(validNumber(terrain.relief, 0, 60), "terrain.relief", "must be 0–60 m");
   check(validNumber(terrain.phase, 0, 7), "terrain.phase", "must be 0–7");
   check(validNumber(terrain.flatRadius, 0, 140), "terrain.flatRadius", "must be 0–140 m");
@@ -39,6 +40,8 @@ export function validateWorld(value: unknown): string[] {
     if (!list(data, min, max)) errors.push(`${path} must contain ${min}–${max} items`);
     else data.forEach((item, i) => validate(record(item), `${path}[${i}]`));
   }
+  if (terrain.peaks !== undefined) items(terrain.peaks, "terrain.peaks", 0, 8, (peak, path) =>
+    check(inside(peak) && validNumber(peak.radius, 10, 100) && validNumber(peak.height, 3, 65), path, "needs an in-bounds center, radius 10–100 m and height 3–65 m"));
   items(terrain.zones, "terrain.zones", 0, 16, (zone, path) =>
     check(inside(zone) && validNumber(zone.radius, 2, 80) && knownSurface(zone.surface), path, "needs an in-bounds center, radius 2–80 m and known surface"));
   items(world.junctions, "junctions", 2, 32, (node, path) =>
@@ -46,7 +49,7 @@ export function validateWorld(value: unknown): string[] {
   items(world.roads, "roads", 1, 24, (road, path) => {
     check(identifier(road.id) && identifier(road.from) && identifier(road.to), path, "needs id, from and to identifiers");
     check(knownSurface(road.surface), `${path}.surface`, "is unknown");
-    check(road.structure === undefined || road.structure === "ramp", `${path}.structure`, "must be ramp when specified");
+    check(road.structure === undefined || (road.structure === "ramp" || road.structure === "deck"), `${path}.structure`, "must be ramp or deck when specified");
     items(road.knots, `${path}.knots`, 2, 32, (knot, at) => {
       const tangent = record(knot.tangent);
       const strength = Math.hypot(Number(tangent.x), Number(tangent.y), Number(tangent.z));
@@ -145,23 +148,9 @@ export function validateWorldGeometry(world: WorldDefinition): string[] {
         }
       }
     }
-    for (let i = 0; i < roads.length; i++) {
-      const first = roads[i];
-      for (const second of roads.slice(i)) {
-        const common = [first.road.from, first.road.to].filter((id) => id === second.road.from || id === second.road.to);
-        let invalid = false;
-        for (let a = 1; a < first.rows.length && !invalid; a++) {
-          for (let b = first === second ? a + 2 : 1; b < second.rows.length; b++) {
-            const crossing = crossingAt(first.rows[a - 1], first.rows[a], second.rows[b - 1], second.rows[b]);
-            if (!crossing || crossing.clearance >= 4.5) continue;
-            const junction = common.some((id) => distance(junctions.get(id)!, crossing.position) < 1.5);
-            if (junction && crossing.clearance < .06) continue;
-            errors.push(`Roads "${first.road.id}" and "${second.road.id}" cross near (${crossing.position.x.toFixed(1)}, ${crossing.position.z.toFixed(1)}) without a flat junction or 4.5 m of clearance`);
-            invalid = true;
-            break;
-          }
-        }
-      }
+    errors.push(...crossingErrors(roads, junctions, world.generation?.version === 2 || world.roads.some((road) => road.structure === "deck")));
+    if (world.generation?.version === 2 && selectRaceRoutes(world, roads).length === 0) {
+      errors.push("No race route has a continuous driveable start, finish and at least 125 m of road");
     }
     const clearance = roadTerrainClearance(world, roads, terrain);
     if (clearance) errors.push(clearance);
@@ -196,6 +185,56 @@ export function validateWorldGeometry(world: WorldDefinition): string[] {
     errors.push(error instanceof Error ? error.message : String(error));
   }
   return [...new Set(errors)];
+}
+
+type SampledRoads = ReturnType<typeof sampleWorldRoads>;
+type Row = SampledRoads[number]["rows"][number];
+
+function crossingErrors(roads: SampledRoads, junctions: Map<string, RoadVector>, checkDecks: boolean) {
+  const errors: string[] = [];
+  const cellSize = 16;
+  const cells = new Map<string, { roadIndex: number; index: number }[]>();
+  const reported = new Set<string>();
+  const bankDrop = (row: Row) => Math.abs(row.frameRight.y) * row.halfWidth + row.crown;
+
+  for (const [roadIndex, first] of roads.entries()) for (let index = 1; index < first.rows.length; index++) {
+    const a = first.rows[index - 1], b = first.rows[index];
+    // Expanding the index lets co-located, nearly parallel decks share a bucket too.
+    const margin = checkDecks ? Math.max(a.halfWidth, b.halfWidth) : 0;
+    const seen = new Set<number>();
+    for (let x = Math.floor((Math.min(a.x, b.x) - margin) / cellSize); x <= Math.floor((Math.max(a.x, b.x) + margin) / cellSize); x++) {
+      for (let z = Math.floor((Math.min(a.z, b.z) - margin) / cellSize); z <= Math.floor((Math.max(a.z, b.z) + margin) / cellSize); z++) {
+        const key = `${x},${z}`;
+        const bucket = cells.get(key) ?? [];
+        for (const previous of bucket) {
+          const second = roads[previous.roadIndex];
+          const pair = `${roadIndex}:${previous.roadIndex}`;
+          if (reported.has(pair) || (first === second && index - previous.index < 2)) continue;
+          const segment = previous.roadIndex * 3501 + previous.index;
+          if (seen.has(segment)) continue;
+          seen.add(segment);
+          const c = second.rows[previous.index - 1], d = second.rows[previous.index];
+          const cross = crossingAt(a, b, c, d);
+          const common = [first.road.from, first.road.to].filter((id) => id === second.road.from || id === second.road.to);
+          const junction = common.some((id) => distance(junctions.get(id)!, cross?.position ?? b) < (cross ? 1.5 : 28));
+          if (junction && (!cross || cross.clearance < .06)) continue;
+          const gap = cross?.clearance;
+          const required = 4.5 + (checkDecks ? Math.max(bankDrop(a), bankDrop(b)) + Math.max(bankDrop(c), bankDrop(d)) + .6 : 0);
+          const overlapsDeck = checkDecks && !cross && (first === second ? index - previous.index > 24 : first.road.structure === "deck" || second.road.structure === "deck")
+            && Math.abs(Math.cos(b.heading - d.heading)) > .88
+            && Math.hypot(b.x - d.x, b.z - d.z) < Math.min(b.halfWidth, d.halfWidth)
+            && Math.abs(b.y - d.y) < required;
+          if ((gap === undefined || gap >= required) && !overlapsDeck) continue;
+          const at = cross?.position ?? b;
+          errors.push(`Roads "${first.road.id}" and "${second.road.id}" overlap near (${at.x.toFixed(1)}, ${at.z.toFixed(1)}) without a flat junction or ${required.toFixed(1)} m of deck clearance`);
+          reported.add(pair);
+        }
+        bucket.push({ roadIndex, index });
+        cells.set(key, bucket);
+      }
+    }
+  }
+  return errors;
 }
 
 function crossingAt(a: RoadVector, b: RoadVector, c: RoadVector, d: RoadVector) {

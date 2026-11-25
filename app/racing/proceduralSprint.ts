@@ -2,18 +2,41 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { paint } from "./surfaces.ts";
 import { sampleWorldRoads, type WorldDefinition } from "./worldDefinition.ts";
+import { raceCheckpoints, selectRaceRoutes } from "./proceduralRaceRoutes.ts";
 import { isPreset } from "./worldGenerator.ts";
 
-const routes = {
+const legacyRoutes = {
   alpine: { name: "Isnedfarten", roads: ["west-descent"] },
   desert: { name: "Klippeveien", roads: ["east-cliff", "east-return"] },
   countryside: { name: "Bygderunden", roads: ["west-climb", "west-descent"] },
 } as const;
 
+export function buildProceduralSprints(world: WorldDefinition, worldHash: string) {
+  if (world.generation?.version === 2) {
+    return selectRaceRoutes(world).map(({ id, label, rows }, index) => {
+      const startIndex = rows.findIndex((row, i) => i >= 4 && row.frameUp.y > .975);
+      const finishIndex = rows.findLastIndex((row, i) => i < rows.length - 6 && row.frameUp.y > .94);
+      const start = rows[startIndex];
+      return {
+        id, name: `${label} ${index + 1}`, rows,
+        spawn: { x: start.x, y: start.y + .84, z: start.z, heading: start.heading },
+        gates: raceCheckpoints(rows, startIndex, finishIndex, 18),
+        recordKey: `little-machines-procedural-sprint-v2:${worldHash}:${id}`,
+      };
+    });
+  }
+  const legacy = buildLegacySprint(world, worldHash);
+  return legacy ? [legacy] : [];
+}
+
 export function buildProceduralSprint(world: WorldDefinition, worldHash: string) {
+  return buildProceduralSprints(world, worldHash)[0];
+}
+
+function buildLegacySprint(world: WorldDefinition, worldHash: string) {
   const preset = world.generation?.preset;
-  if (!preset || !isPreset(preset)) return;
-  const route = routes[preset];
+  if (!preset || !isPreset(preset) || !(preset in legacyRoutes)) return;
+  const route = legacyRoutes[preset as keyof typeof legacyRoutes];
   const sampled = new Map(sampleWorldRoads(world).map(({ road, rows }) => [road.id, rows]));
   const rows = route.roads.flatMap((id, i) => {
     const road = sampled.get(id);
@@ -23,20 +46,9 @@ export function buildProceduralSprint(world: WorldDefinition, worldHash: string)
   // Leave room to settle at the start and to brake before the final junction.
   const start = rows[4];
   const spawn = { x: start.x, y: start.y + .84, z: start.z, heading: start.heading };
-  const gates: typeof rows = [];
-  let distance = 0;
-  const finish = rows.length - 6;
-  for (let i = 5; i <= finish; i++) {
-    const a = rows[i - 1];
-    const b = rows[i];
-    distance += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-    if ((distance >= 16 && i < finish - 6) || i === finish) {
-      gates.push(b);
-      distance = 0;
-    }
-  }
+  const gates = raceCheckpoints(rows, 4, rows.length - 6, 16);
   return {
-    name: route.name, spawn, gates, rows,
+    id: "legacy", name: route.name, spawn, gates, rows,
     recordKey: `little-machines-procedural-sprint-v1:${preset}:${worldHash}`,
   };
 }

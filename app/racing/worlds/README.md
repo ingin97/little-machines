@@ -6,6 +6,9 @@ Copy [Sommerlia](sommerlia.json) to a new JSON file in this directory and change
 pnpm world:validate
 pnpm world:validate app/racing/worlds/sommerlia.json
 pnpm world:validate --seed alpine "Fjell og fjord"
+pnpm world:validate --seed alpine 2026 1
+pnpm world:validate --batch 44
+pnpm world:validate --batch 100 sky-highway 500
 pnpm test
 pnpm lint
 ```
@@ -17,10 +20,10 @@ Validation prints the world identity and SHA-256 hash or reports the location of
 | Field | How to use it |
 | --- | --- |
 | `version`, `id`, `name` | Set version to 1. Use a stable ID and a short Norwegian display name. Leave `generation` out of authored files. |
-| `terrain` | Set `halfExtent` (40–240), `relief` (0–60), `phase` (0–7), `flatRadius` (0–140) and a base `surface`. The optional `shape: "canyon"` cuts a valley across the map. |
+| `terrain` | Set `halfExtent` (40–320), `relief` (0–60), `phase` (0–7), `flatRadius` (0–140) and a base `surface`. The optional `shape: "canyon"` cuts a valley across the map. Optional `peaks` add local hills using `x`, `z`, `radius` (10–100 m), and `height` (3–65 m). |
 | `terrain.zones` | Add up to 16 circular surface zones with `x`, `z`, `radius` (2–80), and `surface`. Earlier zones take priority where they overlap. |
 | `junctions` | Give each road connection or dead end a unique `id` and `position` with `x`, `y`, and `z`. All junctions must be reachable via the road graph. |
-| `roads` | Up to 24 roads, each with an `id`, `from` and `to` junction IDs, `surface` and 2–32 `knots`. Use `structure: "ramp"` to leave terrain below an optional jump. |
+| `roads` | Up to 24 roads, each with an `id`, `from` and `to` junction IDs, `surface` and 2–32 `knots`. Use `structure: "ramp"` to leave terrain below an optional jump or `structure: "deck"` for an elevated road that can cross lower roads. |
 | `bridges` | Reference a road by its `road` ID. An `x`, `z`, and `radius` circle (6–50) selects an elevated span and carves clearance underneath. |
 | `tunnels` | Place a straight north–south tunnel over an existing road. Use `x`, `y`, `z`, `length`, `width` and `height`. The road needs at least 3.5 m of headroom. |
 | `attractions` | Give `football` and `bowling` level positions near a road. A football pitch extends 23 m south of its goal. Bowling pins extend 4 m west. Put each of 1–24 `stars` around 1.35 m above a drivable surface. |
@@ -37,7 +40,10 @@ A knot has a `position`, a `tangent`, a `halfWidth` (2–14 m), and optional `ba
 | Straight | Use two knots with equal elevation and tangents parallel to the line between them. |
 | Curve or banked curve | Add a knot near the middle of the turn and aim each tangent along the curve. Add bank at the middle and return to zero at flat junctions. |
 | Hill, valley, or downhill | Set the elevation of successive knots and use zero vertical tangent at a crest or trough. Use broad slopes, with a maximum sampled grade of 48%. |
-| Spiral | Place knots every 30–45 degrees around a center, aim tangents around the circle, and change height each time. Leave plenty of room between turns and avoid stacking routes at the same height. |
+| Spiral | Place knots every 30–45 degrees around a center, aim tangents around the circle, and change height each time. Keep enough vertical separation for the car, banking, and deck at every turn. |
+| Stacked roads and figure-eights | Give each level its own spline geometry. Close a figure-eight using the same junction ID at both ends with matching frames. The central crossing has no shared junction. Leave at least 4.5 m of clear space plus room for the banked edges and deck fascia. |
+| Switchbacks | Use level run-ins and wide hairpins. Keep adjacent runs far enough apart that the road strips do not meet at the bends. |
+| Long descent and rollercoaster road | Use a continuous spline with broad transitions between crests and dips. Provide a level approach and an alternate route around the challenge. |
 | Bridge or tunnel | Use the respective feature list over a road with gradually sloped approaches. Leave an off-road path into the valley or through the portal. |
 | Ramp | Branch from a flat junction, increase height and pitch toward the lip, and leave room to land on terrain. Keep a route around it. |
 | Intersection | Give roads the same endpoint junction. Keep corners of the intersection flat and wide. For straight-through connections match width, grade and bank on both sides. |
@@ -47,4 +53,12 @@ The available surfaces are `asphalt` (high grip), `grass` (softer handling), `sa
 
 Keep the easiest route wide and visible from the spawn. Drive every junction and approach, then verify the optional jumps, toys, and off-road areas in toddler and normal modes. The validator checks sampled geometry and reachable locations. Playtesting establishes whether a route is fun and forgiving.
 
-Share a procedural world as `?world=alpine&seed=2026&v=1`. Authored worlds use `?world=<id>`. Tabs match on identity and canonical definition hash. Bump the generator version if a change would alter previously shared seed worlds, and retain the earlier generator while its links need to remain playable.
+## Generator profiles and time trials
+
+New worlds selected in the picker use generator v2. It composes a main circuit with seeded choices of bypasses, sky crossings, figure-eights, switchbacks, spirals, summit descents and stunt branches. The four additional profiles are `mountain-expedition`, `sky-highway`, `canyon-adventure` and `rollercoaster-park`. Existing Alpine, Desert and Countryside links that omit `v` still use v1.
+
+The reusable helpers in [roadMotifs.ts](../roadMotifs.ts) return ordinary spline knots. To join motifs smoothly, reuse the endpoint position, tangent, width, and bank. Give branching junctions level approaches. The world builder blends grounded road edges into the terrain and adds shoulders in v2. It keeps raised decks separate from the ground and skips bridge piers over lower roads.
+
+The batch command validates consecutive integer seeds for either one profile or all seven. Failures include the profile, seed, and geometry rejected by each bounded attempt. Race routes follow smooth joins between directed graph edges and use ordered, height-aware checkpoints. Version 2 records are keyed by the canonical world hash and route ID.
+
+Share a v2 world as `?world=sky-highway&seed=2026&v=2`. Share a v1 world as `?world=alpine&seed=2026&v=1`. Authored worlds use `?world=<id>`. Tabs match on identity and canonical definition hash. Bump the generator version if a change would alter previously shared seed worlds, and retain the earlier generator while its links need to remain playable.

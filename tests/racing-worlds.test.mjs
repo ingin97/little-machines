@@ -8,15 +8,18 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { canonicalWorldDefinition, definitionIdentity, sampleWorldRoads } from "../app/racing/worldDefinition.ts";
-import { generateWorld, presets } from "../app/racing/worldGenerator.ts";
+import { generateWorld as generateCurrentWorld, presets as currentPresets } from "../app/racing/worldGenerator.ts";
 import { connectWorldPeer } from "../app/racing/worldPeer.ts";
 import { createDefinedWorld } from "../app/racing/worldRuntime.ts";
-import { buildWorldTerrain } from "../app/racing/worldTerrain.ts";
+import { buildWorldTerrain, roadShoulders } from "../app/racing/worldTerrain.ts";
 import { validateWorld } from "../app/racing/worldValidation.ts";
 import { createVehicle, sprintHandling, sprintTopSpeed, stepTime } from "../app/racing/vehicle.ts";
 
-import { buildProceduralSprint } from "../app/racing/proceduralSprint.ts";
+import { buildProceduralSprint, buildProceduralSprints } from "../app/racing/proceduralSprint.ts";
 import { gateCrossing } from "../app/racing/sprintRules.ts";
+
+const presets = { alpine: currentPresets.alpine, desert: currentPresets.desert, countryside: currentPresets.countryside };
+const generateWorld = (preset, seed) => generateCurrentWorld(preset, seed, 1);
 
 await RAPIER.init();
 
@@ -110,47 +113,155 @@ test("each procedural time trial can be completed using the adult vehicle and ge
       const other = generateWorld(preset, "7");
       assert.notEqual(layout.recordKey, buildProceduralSprint(other, (await definitionIdentity(other)).hash).recordKey);
 
-      const engine = new NullEngine();
-      const scene = new Scene(engine);
-      const sun = new DirectionalLight("sun", new Vector3(-.45, -1, .36), scene);
-      const shadows = new ShadowGenerator(64, sun);
-      const physics = new RAPIER.World({ x: 0, y: -16, z: 0 });
-      physics.timestep = stepTime;
-      try {
-        const park = createDefinedWorld(scene, physics, shadows, world, false);
-        const car = createVehicle(scene, physics, shadows, layout.spawn, park.padAt, sprintHandling, world.terrain.halfExtent);
-        const settings = { speed: sprintTopSpeed, gentle: false, automatic: false, reverse: false, recovery: false };
-        const cruiseSpeed = preset === "alpine" ? 12 : 16;
-        const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-        let row = 0;
-        let gate = 0;
-        const revision = car.revision();
-        // Steer toward a point a few metres ahead, using modest speed through the bends.
-        for (let tick = 0; tick < 60 / stepTime && gate < layout.gates.length; tick++) {
-          const point = car.position();
-          const { x, y, z, w } = car.rotation();
-          while (row + 1 < layout.rows.length && distance(layout.rows[row + 1], point) < distance(layout.rows[row], point)) row++;
-          const target = layout.rows[Math.min(row + 4, layout.rows.length - 1)];
-          const heading = Math.atan2(2 * (w * y + x * z), 1 - 2 * (x * x + y * y));
-          const error = Math.atan2(target.x - point.x, target.z - point.z) - heading;
-          const speed = car.speed();
-          car.step({
-            steer: Math.max(-1, Math.min(1, Math.atan2(Math.sin(error), Math.cos(error)) * 2.8)),
-            accelerator: Math.max(0, Math.min(1, (cruiseSpeed - speed) * .4)),
-            brake: speed > cruiseSpeed + 2 ? .3 : 0,
-          }, settings);
-          physics.step();
-          assert.equal(car.revision(), revision, "car stayed on course without resetting");
-          if (gateCrossing(point, car.position(), layout.gates[gate]) !== null) gate++;
-        }
-        assert.equal(gate, layout.gates.length);
-      } finally {
-        scene.dispose();
-        engine.dispose();
-        physics.free();
-      }
+      driveRace(world, layout, preset === "alpine" ? 12 : 16);
     });
   }
+});
+
+function withDrivingWorld(world, run) {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const sun = new DirectionalLight("sun", new Vector3(-.45, -1, .36), scene);
+  const shadows = new ShadowGenerator(64, sun);
+  const physics = new RAPIER.World({ x: 0, y: -16, z: 0 });
+  physics.timestep = stepTime;
+  try {
+    const park = createDefinedWorld(scene, physics, shadows, world, false);
+    run({ scene, shadows, physics, park });
+  } finally {
+    scene.dispose();
+    engine.dispose();
+    physics.free();
+  }
+}
+
+function driveRace(world, layout, cruiseSpeed) {
+  withDrivingWorld(world, ({ scene, physics, shadows, park }) => {
+    const car = createVehicle(scene, physics, shadows, layout.spawn, park.padAt, sprintHandling, world.terrain.halfExtent);
+    const settings = { speed: sprintTopSpeed, gentle: false, automatic: false, reverse: false, recovery: false };
+    const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+    let row = layout.rows.findIndex((point) => distance(point, layout.spawn) < .001);
+    let gate = 0;
+    const revision = car.revision();
+    for (let tick = 0; tick < 115 / stepTime && gate < layout.gates.length; tick++) {
+      const point = car.position();
+      const { x, y, z, w } = car.rotation();
+      while (row + 1 < layout.rows.length && distance(layout.rows[row + 1], point) < distance(layout.rows[row], point)) row++;
+      const target = layout.rows[Math.min(row + 4, layout.rows.length - 1)];
+      const heading = Math.atan2(2 * (w * y + x * z), 1 - 2 * (x * x + y * y));
+      const error = Math.atan2(target.x - point.x, target.z - point.z) - heading;
+      const speed = car.speed();
+      car.step({
+        steer: Math.max(-1, Math.min(1, Math.atan2(Math.sin(error), Math.cos(error)) * 2.8)),
+        accelerator: Math.max(0, Math.min(1, (cruiseSpeed - speed) * .4)),
+        brake: speed > cruiseSpeed + 2 ? .3 : 0,
+      }, settings);
+      physics.step();
+      assert.equal(car.revision(), revision, `reset after checkpoint ${gate} on ${layout.id}`);
+      if (gateCrossing(point, car.position(), layout.gates[gate]) !== null) gate++;
+    }
+    assert.equal(gate, layout.gates.length, `${layout.id} at row ${row}, position ${JSON.stringify(car.position())}, next checkpoint ${JSON.stringify(layout.gates[gate])}`);
+  });
+}
+
+test("v2 varies graph structure and preserves deterministic versions and route identities", async () => {
+  assert.equal((await definitionIdentity(generateWorld("alpine", "2026"))).hash,
+    "03bbde2ba44c1a7ca47690ea8bfb6a31fbc4d243120f7f7fdbacf72dc2fd0d48");
+  const topology = (world) => {
+    const degree = new Map(world.junctions.map(({ id }) => [id, 0]));
+    for (const { from, to } of world.roads) {
+      degree.set(from, degree.get(from) + 1);
+      degree.set(to, degree.get(to) + 1);
+    }
+    return {
+      // Loop count and degrees are independent of node names, geometry and degree-two subdivisions.
+      cycles: world.roads.length - degree.size + 1,
+      branches: [...degree.values()].filter((value) => value !== 2).sort((a, b) => a - b),
+    };
+  };
+  for (const preset of Object.keys(currentPresets)) {
+    const graphs = new Set();
+    const loops = new Set();
+    for (let seed = 0; seed < 8; seed++) {
+      const world = generateCurrentWorld(preset, String(seed));
+      const signature = topology(world);
+      graphs.add(JSON.stringify(signature));
+      loops.add(signature.cycles);
+    }
+    assert.ok(graphs.size >= 3 && loops.size >= 2, preset);
+    const world = generateCurrentWorld(preset, "2026");
+    const hash = (await definitionIdentity(world)).hash;
+    const races = buildProceduralSprints(world, hash);
+    assert.equal(canonicalWorldDefinition(world), canonicalWorldDefinition(generateCurrentWorld(preset, "2026", 2)));
+    assert.ok(races.length >= 2);
+    assert.equal(new Set(races.map((race) => race.recordKey)).size, races.length);
+    assert.deepEqual(races, buildProceduralSprints(generateCurrentWorld(preset, "2026"), hash));
+  }
+});
+
+test("v2 races drive through curves, junctions, stacked roads and long descents", async (t) => {
+  for (const [preset, motif, speed, seed = "2026"] of [
+    ["sky-highway", "figure-eight", 10],
+    ["sky-highway", "sky-crossing", 14],
+    ["sky-highway", "circuit-north", 18],
+    ["mountain-expedition", "summit-spiral", 13],
+    ["alpine", "switchbacks", 8],
+    ["mountain-expedition", "summit-descent", 13, "0"],
+    ["rollercoaster-park", "coaster", 14],
+  ]) {
+    await t.test(motif, () => {
+      const world = generateCurrentWorld(preset, seed);
+      const race = buildProceduralSprints(world, "test").find(({ id }) => id.includes(motif));
+      assert.ok(race, motif);
+      driveRace(world, race, speed);
+    });
+  }
+});
+
+test("crossing checks reject a flattened figure-eight and the lower road stays clear of bridge piers", () => {
+  const world = generateCurrentWorld("sky-highway", "2026");
+  const invalid = structuredClone(world);
+  const figure = invalid.roads.find(({ id }) => id === "figure-eight");
+  for (const knot of figure.knots) {
+    knot.position.y = .18;
+    knot.tangent.y = 0;
+  }
+  assert.ok(validateWorld(invalid).some((error) => error.includes("figure-eight") && error.includes("clearance")));
+  withDrivingWorld(world, ({ physics }) => {
+    physics.step();
+    const down = { x: 0, y: -1, z: 0 };
+    for (const z of [-9, 0, 9]) {
+      const hit = physics.castRay(new RAPIER.Ray({ x: -36, y: 5, z }, down), 6, true);
+      assert.ok(hit && Math.abs(5 - hit.timeOfImpact - .18) < .04, `lower deck at ${z}`);
+    }
+    const upper = physics.castRay(new RAPIER.Ray({ x: -36, y: 45, z: 0 }, down), 45, true);
+    assert.ok(upper && 45 - upper.timeOfImpact > 20);
+  });
+});
+
+test("a toddler car can rejoin a grounded banked road from its shoulder", () => {
+  const world = generateCurrentWorld("mountain-expedition", "2026");
+  const rows = sampleWorldRoads(world).find(({ road }) => road.id === "circuit-south").rows;
+  const terrain = buildWorldTerrain(world);
+  const shoulders = roadShoulders(rows, terrain, 1, () => false)[0];
+  const section = shoulders[Math.floor(shoulders.length / 2)];
+  const row = rows[Math.floor(rows.length / 2)];
+  const outward = { x: Math.cos(row.heading), z: -Math.sin(row.heading) };
+  const x = section.x + outward.x * (section.halfWidth + 1.4);
+  const z = section.z + outward.z * (section.halfWidth + 1.4);
+  withDrivingWorld(world, ({ scene, physics, shadows, park }) => {
+    const car = createVehicle(scene, physics, shadows,
+      { x, y: terrain.heightAt(x, z) + .9, z, heading: row.heading - Math.PI / 2 }, park.padAt);
+    const settings = { speed: 11, gentle: true, automatic: true, reverse: true, recovery: true };
+    const revision = car.revision();
+    for (let tick = 0; tick < 360; tick++) {
+      car.step({ accelerator: 1, steer: 0, brake: 0 }, settings);
+      physics.step();
+      if (car.wheelSurfaces().includes("asphalt")) break;
+    }
+    assert.ok(car.wheelSurfaces().includes("asphalt"), JSON.stringify({ x, z, position: car.position(), surfaces: car.wheelSurfaces(), section, row }));
+    assert.equal(car.revision(), revision);
+  });
 });
 
 test("data-channel poses are gated on both the world id and canonical hash", async () => {

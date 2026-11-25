@@ -14,7 +14,7 @@ import { createControls } from "./controls";
 import { createVehicle, sprintHandling, sprintTopSpeed, stepTime } from "./vehicle";
 import { createWorld, spawn } from "./world";
 import { createSprintCourse } from "./sprintCourse";
-import { addProceduralSprintGates, buildProceduralSprint } from "./proceduralSprint.ts";
+import { addProceduralSprintGates, buildProceduralSprints } from "./proceduralSprint.ts";
 import { createSprint } from "./sprint";
 import { classicWorldIdentity, definitionIdentity } from "./worldDefinition.ts";
 import { createDefinedWorld } from "./worldRuntime.ts";
@@ -76,7 +76,9 @@ async function start() {
     sun.intensity = .85;
   }
   const identity = definition ? await definitionIdentity(definition) : classicWorldIdentity;
-  const layout = racing && definition ? buildProceduralSprint(definition, identity.hash) : undefined;
+  const raceLayouts = racing && selectedWorld?.generation
+    ? buildProceduralSprints(selectedWorld, definition ? identity.hash : "") : [];
+  const layout = definition && (raceLayouts.find(({ id }) => id === params.get("route")) ?? raceLayouts[0]);
   const proceduralCourse = layout && addProceduralSprintGates(scene, layout);
   const classicCourse = racing && !proceduralCourse ? createSprintCourse(scene, physics, ridge) : undefined;
   const course = proceduralCourse ?? classicCourse;
@@ -99,17 +101,20 @@ async function start() {
     document.querySelector<HTMLButtonElement>("#sprint-retry")!.onclick = sprint!.reset;
     document.querySelector<HTMLAnchorElement>("#sprint-mode")!.hidden = true;
     const parkLink = document.querySelector<HTMLAnchorElement>("#park-mode")!;
-    if (selectedWorld?.generation) {
-      const worldTrack = document.querySelector<HTMLAnchorElement>("#procedural-track")!;
+    for (const [index, race] of raceLayouts.entries()) {
+      const link = document.createElement("a");
       const url = worldURL(choice, location.href);
       url.searchParams.set("mode", "sprint");
-      worldTrack.href = url.href;
-      worldTrack.textContent = selectedWorld.name;
-      if (layout) worldTrack.setAttribute("aria-current", "page");
-      worldTrack.hidden = false;
+      if (race.id !== "legacy") url.searchParams.set("route", race.id);
+      link.href = url.href;
+      link.textContent = race.id === "legacy" ? selectedWorld!.name : race.name;
+      if (layout?.id === race.id) link.setAttribute("aria-current", "page");
+      const tracks = document.querySelector(".sprint-tracks")!;
+      tracks.insertBefore(link, tracks.children[index]);
     }
     for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-track]")) {
       const trackParams = new URLSearchParams(params);
+      trackParams.delete("route");
       if (link.dataset.track === "ridge" || selectedWorld?.generation) trackParams.set("track", link.dataset.track!);
       else trackParams.delete("track");
       link.href = `?${trackParams}`;
@@ -118,6 +123,7 @@ async function start() {
     if (selectedWorld?.generation) parkLink.textContent = "Fri kjøring";
     params.delete("mode");
     params.delete("track");
+    params.delete("route");
     parkLink.href = params.size ? `?${params}` : "./racing.html";
     parkLink.hidden = false;
   } else {
@@ -218,7 +224,7 @@ async function start() {
     }
     localPlayers?.update(dt);
     chase.update(dt);
-    sun.position.set(car.root.position.x + 18, 42, car.root.position.z - 16);
+    sun.position.set(car.root.position.x + 18, Math.max(42, car.root.position.y + 32), car.root.position.z - 16);
     scene.render();
   });
   window.addEventListener("resize", () => engine.resize());

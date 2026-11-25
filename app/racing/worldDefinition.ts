@@ -8,7 +8,7 @@ export type RoadDefinition = {
   surface: DrivingSurface;
   from: string;
   to: string;
-  structure?: "ramp";
+  structure?: "ramp" | "deck";
 };
 
 export type WorldDefinition = {
@@ -23,6 +23,7 @@ export type WorldDefinition = {
     phase: number;
     surface: DrivingSurface;
     flatRadius: number;
+    peaks?: { x: number; z: number; radius: number; height: number }[];
     zones: { x: number; z: number; radius: number; surface: DrivingSurface }[];
   };
   junctions: { id: string; position: RoadVector }[];
@@ -48,7 +49,8 @@ export const knownSurface = (value: unknown): value is DrivingSurface =>
 export function sampleWorldRoads(world: WorldDefinition) {
   let count = 0;
   return world.roads.map((road) => {
-    const rows = sampleRoadSpline(road.knots, roadSpacing, true);
+    const frame = world.generation?.version === 2 || road.structure === "deck" ? "upright" : "transport";
+    const rows = sampleRoadSpline(road.knots, roadSpacing, true, frame);
     count += rows.length;
     if (count > 3_500) throw new Error(`Road "${road.id}" exceeds the world budget of 3,500 road samples`);
     return { road, rows };
